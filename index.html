@@ -173,6 +173,57 @@
   footer { text-align:center; padding: 20px; font-size:11px; color: var(--text-dim); }
   footer .yel { color: var(--yellow-dim); font-weight:600; }
   @media (max-width: 1100px){ .chart-row-small { grid-template-columns: 1fr; } .sidebar { width: 168px; } }
+
+  /* ===================== MOBILE / CELULAR ===================== */
+  @media (max-width: 760px){
+    .app { flex-direction: column; }
+    .content { order: 0; }
+    /* navegação vira barra inferior fixa (padrão de app) */
+    .sidebar {
+      order: 1; width: 100%; height: auto;
+      position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 70;
+      flex-direction: row; border-right: none; border-top: 1px solid var(--border);
+      box-shadow: 0 -2px 12px rgba(20,22,30,.10);
+    }
+    .side-top, .side-foot { display: none; }
+    .side-nav { flex-direction: row; gap: 4px; padding: 6px 8px; flex: 1; }
+    .side-nav .nav-label { display: none; }
+    .tab-btn { flex: 1; justify-content: center; padding: 9px 4px; font-size: 13px; border-left: none; border-radius: 9px; }
+    .tab-btn.active { border-left: none; background: var(--yellow-soft); }
+    .tab-badge { display: none; }
+
+    /* topo compacto */
+    .topbar { padding: 10px 14px; flex-wrap: wrap; gap: 10px; }
+    .logo-lockup { gap: 8px; }
+    .lk-tag { display: none; }
+    .lk-dhl { padding: 6px 10px 7px; }
+    .lk-dhl .lk-dhl-word { font-size: 18px; }
+    .lk-ml { padding: 6px 10px; }
+    .topbar-right { gap: 8px; margin-left: auto; }
+    .live-pill { padding: 6px 10px; font-size: 11px; }
+    #refreshBtn { padding: 8px 12px; }
+
+    main { padding: 16px 12px 92px; }   /* espaço extra embaixo p/ a barra de navegação */
+
+    /* KPIs 2 por linha */
+    .kpi-row { grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+    .kpi-card { padding: 13px; }
+    .kpi-value { font-size: 23px; }
+    .kpi-card.active::after { font-size: 8px; top: 7px; right: 8px; }
+
+    /* gráfico empilhado */
+    .chart-row-small { grid-template-columns: 1fr; }
+    .chart-box-sm { height: 170px; }
+
+    /* filtros: busca ocupa a linha inteira */
+    .filter-bar { padding: 11px 12px; gap: 8px; }
+    input[type="text"].search { flex: 1 1 100%; min-width: 0; }
+    .ms-pop { min-width: 58vw; max-width: 88vw; }
+
+    /* tabelas rolam na horizontal por dentro */
+    .table-scroll, .table-scroll.short { max-height: 62vh; }
+    .table-head-bar { font-size: 12px; }
+  }
 </style>
 </head>
 <body>
