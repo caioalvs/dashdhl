@@ -42,6 +42,7 @@ const SHEET_CSV = {
   xpt:      'https://docs.google.com/spreadsheets/d/e/2PACX-1vQIA0s8fgtB3zxdzJ7xPoWoaVgxO0R7IFDwaVqinmhm0AMDWDLhRXwzFHvNlosniSamBgxokptIS2Ic/pub?gid=977192473&single=true&output=csv',
   validacao:'https://docs.google.com/spreadsheets/d/e/2PACX-1vQIA0s8fgtB3zxdzJ7xPoWoaVgxO0R7IFDwaVqinmhm0AMDWDLhRXwzFHvNlosniSamBgxokptIS2Ic/pub?gid=217934034&single=true&output=csv',
   sm:       'https://docs.google.com/spreadsheets/d/e/2PACX-1vQIA0s8fgtB3zxdzJ7xPoWoaVgxO0R7IFDwaVqinmhm0AMDWDLhRXwzFHvNlosniSamBgxokptIS2Ic/pub?gid=810330774&single=true&output=csv',  // aba SM: origem/destino (cidade+UF) por protocolo
+  ocorrencias:'https://docs.google.com/spreadsheets/d/e/2PACX-1vQIA0s8fgtB3zxdzJ7xPoWoaVgxO0R7IFDwaVqinmhm0AMDWDLhRXwzFHvNlosniSamBgxokptIS2Ic/pub?gid=761153438&single=true&output=csv',  // aba Ocorrências: A=protocolo, O=ocorrência
   acompCpt: ''   // (opcional) URL CSV da aba ACOMP CPT
 };
 
@@ -54,7 +55,7 @@ const filters = {
 };
 
 // rótulos das faixas de risco da ETD (para o filtro "banda")
-const BANDA_LABEL = { verde:'No prazo (≤55)', amarelo:'Risco (56–65)', vermelho:'Possível atraso (>65)' };
+const BANDA_LABEL = { verde:'No prazo (≤46)', amarelo:'Risco (47–55)', vermelho:'Possível atraso (>55)' };
 
 let charts = {}; // guarda instâncias Chart.js para destruir/recriar
 
@@ -244,8 +245,22 @@ function buildSmIndex(){
   });
 }
 
+// Índice de Ocorrências: protocolo -> texto da ocorrência (motivo em sistema)
+let OCOR_INDEX = {};
+function buildOcorIndex(){
+  OCOR_INDEX = {};
+  (DASHBOARD_DATA.ocorrencias || []).forEach(r => {
+    const p = String(r.protocolo || '').trim();
+    const o = (r.ocorrencia || '').trim();
+    if(!p || !o) return;
+    if(OCOR_INDEX[p]){ if(!OCOR_INDEX[p].includes(o)) OCOR_INDEX[p] += ' · ' + o; }  // junta múltiplas
+    else OCOR_INDEX[p] = o;
+  });
+}
+
 function enrichData(){
   buildSmIndex();
+  buildOcorIndex();
   // ---- ETA: no prazo se G < F ; atrasado se G >= F ; aguardando se G vazio
   DASHBOARD_DATA.eta.forEach(d => {
     // fallback p/ modo sample (sem células posicionais)
@@ -271,8 +286,8 @@ function enrichData(){
     let cls = 'cinza', txt = 'Sem dado';
     const q = d.kmMedio;
     if(q != null){
-      if(q <= 55)      { cls = 'verde';    txt = 'No prazo'; }
-      else if(q <= 65) { cls = 'amarelo';  txt = 'Risco'; }
+      if(q <= 46)      { cls = 'verde';    txt = 'No prazo'; }
+      else if(q <= 55) { cls = 'amarelo';  txt = 'Risco'; }
       else             { cls = 'vermelho'; txt = 'Possível atraso'; }
     }
     d.risco = cls;
@@ -286,11 +301,14 @@ function enrichData(){
     d.naoPrioritaria = /xpt|rev|revers/i.test(`${d.rota||''} ${d.tipoRota||''}`);
 
     // Origem/Destino reais vêm da aba SM (cidade+UF). A coluna O do ETD é o sinal de GPS.
-    const sm = SM_INDEX[String(d.protocolo || '').trim()];
+    const pkey = String(d.protocolo || '').trim();
+    const sm = SM_INDEX[pkey];
     d.origemGeo  = (sm && sm.origem)  ? sm.origem  : d.origem;
     d.destinoGeo = (sm && sm.destino) ? sm.destino : d.destino;
     if(sm && sm.destino) d.destino = sm.destino;   // exibição e filtro de destino
     if(sm && sm.origem)  d.origem  = sm.origem;
+    // Ocorrência (motivo em sistema) ligada pelo protocolo
+    d.ocorrencia = OCOR_INDEX[pkey] || '';
   });
 }
 
@@ -334,9 +352,9 @@ function renderEtdKpis(rows){
 
   const naoPrio = rows.length - prio.length;
   $('#etd-readout').innerHTML = `
-    <div class="ca-row"><span class="ca-dot" style="background:var(--green)"></span><div><b>${noprazo}</b> no prazo (≤55 km/h)</div></div>
-    <div class="ca-row"><span class="ca-dot" style="background:var(--amber)"></span><div><b>${risco}</b> em risco (56–65)</div></div>
-    <div class="ca-row"><span class="ca-dot" style="background:var(--red)"></span><div><b>${atraso}</b> possível atraso (&gt;65)</div></div>
+    <div class="ca-row"><span class="ca-dot" style="background:var(--green)"></span><div><b>${noprazo}</b> no prazo (≤46 km/h)</div></div>
+    <div class="ca-row"><span class="ca-dot" style="background:var(--amber)"></span><div><b>${risco}</b> em risco (47–55)</div></div>
+    <div class="ca-row"><span class="ca-dot" style="background:var(--red)"></span><div><b>${atraso}</b> possível atraso (&gt;55)</div></div>
     <div class="ca-row"><span class="ca-dot" style="background:var(--grey)"></span><div><b>${parados}</b> parados · <b>${naoPrio}</b> não prioritárias</div></div>`;
 }
 
@@ -348,8 +366,10 @@ function renderEtaTable(rows){
   if(!rows.length){
     tb.innerHTML = `<tr><td colspan="10"><div class="empty-state">Nenhuma rota corresponde aos filtros.</div></td></tr>`;
   } else {
+    const ord = { vermelho:0, cinza:1, verde:2 };  // críticos (atrasados) no topo
+    rows = [...rows].sort((a,b) => (ord[a.classificacao]??3) - (ord[b.classificacao]??3));
     tb.innerHTML = rows.map(d => `
-      <tr>
+      <tr class="${d.classificacao==='vermelho'?'crit':''}">
         <td class="mono">${escapeHtml(d.protocolo)}</td>
         <td class="mono">${escapeHtml(d.rota)}</td>
         <td>${escapeHtml(d.motorista)}</td>
@@ -405,12 +425,12 @@ function fillEtdTable(key, rows){
   $('#etd-cnt-'+key).textContent = rows.length;
   const tb = $('#etd-tbody-'+key);
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="12"><div class="empty-state">Nenhuma rota nesta faixa.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="13"><div class="empty-state">Nenhuma rota nesta faixa.</div></td></tr>`;
     return;
   }
   rows.sort((a,b) => (b.kmMedio||0) - (a.kmMedio||0));
   tb.innerHTML = rows.map(d => `
-    <tr>
+    <tr class="${d.risco==='vermelho'?'crit':''}">
       <td class="mono">${escapeHtml(d.protocolo)}</td>
       <td class="mono">${escapeHtml(d.rota)}</td>
       <td class="mono">${escapeHtml(d.placa)}</td>
@@ -423,14 +443,22 @@ function fillEtdTable(key, rows){
       <td>${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
       <td>${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
+      ${ocorCell(d)}
     </tr>`).join('');
+}
+
+// célula de ocorrência (motivo em sistema); destaca em vermelho se a rota é possível atraso
+function ocorCell(d){
+  if(!d.ocorrencia) return `<td class="ocor"><span class="ocor-empty">—</span></td>`;
+  const cls = d.risco === 'vermelho' ? 'ocor-alert' : 'ocor-info';
+  return `<td class="ocor"><span class="${cls}" title="${escapeHtml(d.ocorrencia)}">${escapeHtml(d.ocorrencia)}</span></td>`;
 }
 
 function fillEtdNaoPrio(rows){
   $('#etd-cnt-nao').textContent = rows.length;
   const tb = $('#etd-tbody-nao');
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="10"><div class="empty-state">Nenhuma rota XPT/reversa no momento.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="11"><div class="empty-state">Nenhuma rota XPT/reversa no momento.</div></td></tr>`;
     return;
   }
   tb.innerHTML = rows.map(d => `
@@ -445,6 +473,7 @@ function fillEtdNaoPrio(rows){
       <td>${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
       <td>${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
+      ${ocorCell(d)}
     </tr>`).join('');
 }
 
@@ -524,7 +553,7 @@ function renderEtdBuckets(rows){
   destroyChart('etdBuckets');
   charts.etdBuckets = new Chart($('#chartEtdBuckets'), {
     type:'doughnut',
-    data:{ labels:['No prazo (≤55)','Risco (56–65)','Possível atraso (>65)'],
+    data:{ labels:['No prazo (≤46)','Risco (47–55)','Possível atraso (>55)'],
       datasets:[{ data:[noprazo,risco,atraso],
         backgroundColor:[PALETTE.green, PALETTE.amber, PALETTE.red], borderWidth:0 }] },
     options:{ responsive:true, maintainAspectRatio:false, cutout:'60%',
@@ -538,14 +567,82 @@ function renderEtdBuckets(rows){
 function refreshEta(){
   const rows = getEtaFiltered();
   renderEtaKpis(rows);
+  renderEtaRibbon(rows);
   renderEtaTable(rows);
   renderEtaCharts(rows);
 }
 function refreshEtd(){
   const rows = getEtdFiltered();
   renderEtdKpis(rows);
+  renderEtdRibbon(rows);
   renderEtdBuckets(rows.filter(d => !d.naoPrioritaria));
   renderEtdTables(rows);
+}
+
+/* ----------------------------------------------------------------------- */
+/* Status ribbon (assinatura: leitura de comando no topo da aba)            */
+/* ----------------------------------------------------------------------- */
+function segBar(parts){
+  const total = parts.reduce((s,p)=>s+p.n,0) || 1;
+  return parts.map(p => p.n>0 ? `<span style="width:${(p.n/total*100).toFixed(1)}%;background:${p.color}"></span>` : '').join('');
+}
+function statItem(color, label, n){
+  return `<div class="os"><i style="background:${color}"></i>${label} <b>${n}</b></div>`;
+}
+function setRibbon(tab, state, headlineHtml, barHtml, statsHtml){
+  const rib = $('#ribbon-'+tab);
+  if(rib){ rib.classList.remove('state-verde','state-amarelo','state-vermelho'); rib.classList.add('state-'+state); }
+  $('#'+tab+'-ops-headline').innerHTML = headlineHtml;
+  $('#'+tab+'-ops-bar').innerHTML = barHtml;
+  $('#'+tab+'-ops-stats').innerHTML = statsHtml;
+}
+function renderEtaRibbon(rows){
+  const np = rows.filter(d => d.classificacao === 'verde').length;
+  const at = rows.filter(d => d.classificacao === 'vermelho').length;
+  const ag = rows.filter(d => d.classificacao === 'cinza').length;
+  const state = at>0 ? 'vermelho' : 'verde';
+  const hl = at>0
+    ? `<span class="hl-strong">${at}</span> chegada${at>1?'s':''} atrasada${at>1?'s':''}`
+    : (rows.length ? 'Todas as chegadas no prazo' : 'Sem rotas no momento');
+  setRibbon('eta', state, hl,
+    segBar([{n:np,color:'var(--green)'},{n:at,color:'var(--red)'},{n:ag,color:'var(--grey)'}]),
+    statItem('var(--green)','No prazo',np)+statItem('var(--red)','Atrasado',at)+statItem('var(--grey)','Aguardando',ag));
+}
+function renderEtdRibbon(rows){
+  const prio = rows.filter(d => !d.naoPrioritaria);
+  const np = prio.filter(d => d.risco === 'verde').length;
+  const ri = prio.filter(d => d.risco === 'amarelo').length;
+  const at = prio.filter(d => d.risco === 'vermelho').length;
+  const pa = rows.filter(d => d.parado).length;
+  const state = (at>0 || pa>0) ? 'vermelho' : (ri>0 ? 'amarelo' : 'verde');
+  let hl;
+  if(at>0 || pa>0){
+    const bits = [];
+    if(at>0) bits.push(`<span class="hl-strong">${at}</span> em possível atraso`);
+    if(pa>0) bits.push(`<span class="hl-strong">${pa}</span> parada${pa>1?'s':''}`);
+    hl = bits.join(' · ');
+  } else if(ri>0){
+    hl = `<span class="hl-strong" style="color:var(--amber)">${ri}</span> rota${ri>1?'s':''} em risco`;
+  } else {
+    hl = rows.length ? 'Frota fluindo no prazo' : 'Sem rotas em viagem';
+  }
+  setRibbon('etd', state, hl,
+    segBar([{n:np,color:'var(--green)'},{n:ri,color:'var(--amber)'},{n:at,color:'var(--red)'}]),
+    statItem('var(--green)','No prazo',np)+statItem('var(--amber)','Risco',ri)+statItem('var(--red)','Possível atraso',at)+statItem('var(--grey)','Parados',pa));
+}
+
+// nav badges (trilho) sinalizam onde estão os problemas — sobre os dados completos
+function setNavBadge(id, kind){
+  const el = $('#'+id); if(!el) return;
+  el.classList.remove('bad','warn'); if(kind) el.classList.add(kind);
+}
+function updateNavHealth(){
+  const etd = DASHBOARD_DATA.etd || [];
+  const etdBad  = etd.some(d => (!d.naoPrioritaria && d.risco === 'vermelho') || d.parado);
+  const etdWarn = etd.some(d => !d.naoPrioritaria && d.risco === 'amarelo');
+  setNavBadge('badgeEtd', etdBad ? 'bad' : (etdWarn ? 'warn' : ''));
+  const eta = DASHBOARD_DATA.eta || [];
+  setNavBadge('badgeEta', eta.some(d => d.classificacao === 'vermelho') ? 'bad' : '');
 }
 
 function renderAll(){
@@ -558,6 +655,9 @@ function renderAll(){
   refreshEtd();
   renderXptTable();
   renderValTable();
+  $('#badgeMapa').textContent = (DASHBOARD_DATA.etd || []).filter(d => !d.naoPrioritaria).length;
+  renderFleetMap();
+  updateNavHealth();
   const lu = DASHBOARD_DATA.lastUpdate ? fmtDateTime(DASHBOARD_DATA.lastUpdate) : '—';
   $('#lastUpdateLabel').textContent = `Atualizado ${lu}`;
 }
@@ -606,11 +706,13 @@ function bindTabs(){
       $$('.tab-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       const tab = btn.dataset.tab;
-      ['eta','etd','xpt','validacao'].forEach(t=>{
+      ['eta','etd','xpt','validacao','mapa'].forEach(t=>{
         $('#view-'+t).style.display = (t===tab)?'block':'none';
       });
       // recalcula tamanho dos gráficos da aba aberta
       Object.values(charts).forEach(c=>c.resize());
+      // o mapa precisa recalcular tamanho quando a aba fica visível
+      if(tab==='mapa') renderFleetMap();
     });
   });
 }
@@ -667,6 +769,7 @@ function startAutoRefresh(){
 
 async function boot(){
   DIST.load();
+  bindTheme();
   bindTabs();
   bindFilters();
 
@@ -698,6 +801,72 @@ async function boot(){
 }
 
 document.addEventListener('DOMContentLoaded', boot);
+
+/* ----------------------------------------------------------------------- */
+/* MAPA da frota (Leaflet + OpenStreetMap)                                  */
+/* ----------------------------------------------------------------------- */
+let _map = null, _fleetLayer = null;
+const RISK_COLOR = { verde:'#16a34a', amarelo:'#e08a00', vermelho:'#D40511', cinza:'#9aa0aa' };
+
+function initFleetMap(){
+  if(_map || typeof L === 'undefined') return;
+  const el = document.getElementById('fleetMap');
+  if(!el) return;
+  _map = L.map('fleetMap').setView([-15.0, -52.0], 4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(_map);
+  _fleetLayer = L.layerGroup().addTo(_map);
+}
+
+function renderFleetMap(){
+  if(typeof L === 'undefined') return;       // Leaflet ainda não carregou
+  initFleetMap();
+  if(!_map || !_fleetLayer) return;
+  _map.invalidateSize();
+  _fleetLayer.clearLayers();
+  const rows = (DASHBOARD_DATA.etd || []).filter(d => !d.naoPrioritaria);
+  let plotted = 0;
+  rows.forEach(d => {
+    const o = DIST.geo[normKey(d.origemGeo)], dst = DIST.geo[normKey(d.destinoGeo)];
+    if(!o || o === 'FAIL' || !dst || dst === 'FAIL') return;
+    const total = DIST.get(d.origemGeo, d.destinoGeo);
+    let frac = 0.5;
+    if(total && total > 0 && d.kmFaltante != null) frac = Math.max(0, Math.min(1, (total - d.kmFaltante) / total));
+    const lat = o.lat + frac * (dst.lat - o.lat);
+    const lon = o.lon + frac * (dst.lon - o.lon);
+    const color = RISK_COLOR[d.risco] || RISK_COLOR.cinza;
+    L.polyline([[o.lat,o.lon],[dst.lat,dst.lon]], { color, weight:1, opacity:.22 }).addTo(_fleetLayer);
+    const pct = Math.round(frac * 100);
+    L.circleMarker([lat,lon], { radius:7, color:'#fff', weight:1.5, fillColor:color, fillOpacity:.95 })
+      .bindPopup(`<b>${escapeHtml(d.protocolo)}</b><br>${escapeHtml(d.origemGeo||'?')} → ${escapeHtml(d.destinoGeo||'?')}<br>${pct}% concluído${d.kmFaltante!=null?' · '+d.kmFaltante+' km restantes':''}<br>${escapeHtml(d.riscoTexto||'')}${d.ocorrencia?'<br>⚠ '+escapeHtml(d.ocorrencia):''}`)
+      .addTo(_fleetLayer);
+    plotted++;
+  });
+  const hl = $('#mapa-ops-headline');
+  if(hl){
+    const pend = rows.length - plotted;
+    hl.textContent = `${plotted} veículo${plotted!==1?'s':''} no mapa${pend>0?` · ${pend} aguardando geolocalização`:''}`;
+  }
+}
+
+/* ----------------------------------------------------------------------- */
+/* Tema NOC (claro ⇄ escuro)                                                */
+/* ----------------------------------------------------------------------- */
+function applyTheme(noc){
+  document.body.classList.toggle('noc', !!noc);
+  const b = $('#themeBtn'); if(b) b.textContent = noc ? '☀️' : '🌙';
+  if(typeof Chart !== 'undefined') Chart.defaults.color = noc ? '#8b92a3' : PALETTE.dim;
+  try { localStorage.setItem('dhl_theme', noc ? 'noc' : 'light'); } catch(e){}
+}
+function bindTheme(){
+  let saved = 'light';
+  try { saved = localStorage.getItem('dhl_theme') || 'light'; } catch(e){}
+  applyTheme(saved === 'noc');
+  const b = $('#themeBtn');
+  if(b) b.addEventListener('click', () => {
+    applyTheme(!document.body.classList.contains('noc'));
+    if(typeof renderAll === 'function') renderAll();   // re-renderiza gráficos com a cor nova
+  });
+}
 
 /* =========================================================================
    PRODUÇÃO — consumo do Google Sheets publicado (CSV)
@@ -977,14 +1146,20 @@ function mapSmRow(row){
   };
 }
 
+// Aba Ocorrências: A = protocolo · O = ocorrência (motivo em sistema)
+function mapOcorrenciaRow(row){
+  return { protocolo: cell(row,'A'), ocorrencia: cell(row,'O') };
+}
+
 /* ---- Carregamento a partir do Sheets ------------------------------------ */
 const SHEET_MAP = {
-  eta:       { key:'eta',       mapper: mapEtaRow },
-  etd:       { key:'etd',       mapper: mapEtdRow },
-  xpt:       { key:'xpt',       mapper: mapXptRow },
-  validacao: { key:'validacao', mapper: mapValRow },
-  sm:        { key:'sm',        mapper: mapSmRow },
-  acompCpt:  { key:'acompCpt',  mapper: mapAcompRow }
+  eta:        { key:'eta',        mapper: mapEtaRow },
+  etd:        { key:'etd',        mapper: mapEtdRow },
+  xpt:        { key:'xpt',        mapper: mapXptRow },
+  validacao:  { key:'validacao',  mapper: mapValRow },
+  sm:         { key:'sm',         mapper: mapSmRow },
+  ocorrencias:{ key:'ocorrencias',mapper: mapOcorrenciaRow },
+  acompCpt:   { key:'acompCpt',   mapper: mapAcompRow }
 };
 
 async function fetchTab(name){
@@ -1090,7 +1265,8 @@ const DIST = {
         }
       } catch(e){ this.pair[k] = 'FAIL'; }
       this.save();
-      if(typeof refreshEtd === 'function') refreshEtd();  // re-render com a distância nova
+      if(typeof refreshEtd === 'function') refreshEtd();        // re-render com a distância nova
+      if(typeof renderFleetMap === 'function') renderFleetMap(); // atualiza o mapa
     }
     this.running = false;
   },
@@ -1116,3 +1292,4 @@ const DIST = {
     return null;
   }
 };
+/* fim do app.js — painel de tracking DHL × Mercado Livre */
