@@ -159,6 +159,7 @@ function syncFilterUI(tab){
     if(wasOpen) c.classList.add('open');
   });
   syncKpiActive(tab);
+  saveView();
 }
 function rebuildMs(container){
   const tab = container.dataset.tab, key = container.dataset.key;
@@ -823,7 +824,9 @@ function openDetail(proto){
     action = `Ocorrência registrada: ${ocor}. Avalie a necessidade de ação.`; acls = 'dt-warn';
   }
 
-  let html = `<div class="dt-action ${acls}"><span class="dt-action-ttl">Ação recomendada</span>${escapeHtml(action)}</div>`;
+  const watched = isWatched(proto);
+  let html = `<button id="dt-watch" class="dt-watch ${watched?'on':''}" data-proto="${escapeHtml(proto)}">${watched?'★ Em observação':'☆ Observar este protocolo'}</button>`
+    + `<div class="dt-action ${acls}"><span class="dt-action-ttl">Ação recomendada</span>${escapeHtml(action)}</div>`;
   if(eta){
     html += `<div class="dt-sec">Chegada · ETA</div>`
       + dtField('Resultado', eta.classificacaoTexto) + dtField('Horário máximo', fmtDateTime(eta.horarioMax))
@@ -864,6 +867,10 @@ function closeDetail(){
 function bindRowDetails(){
   document.addEventListener('click', (e) => {
     if(e.target.closest('#dt-close') || e.target.id === 'detail-overlay'){ closeDetail(); return; }
+    const wb = e.target.closest('#dt-watch');
+    if(wb){ toggleWatch(wb.dataset.proto); return; }
+    const wi = e.target.closest('.watch-item');
+    if(wi){ openDetail(wi.dataset.proto); return; }
     const tr = e.target.closest('.table-wrap tbody tr');
     if(tr && !tr.querySelector('.empty-state')){
       const cell = tr.querySelector('.mono');
@@ -872,6 +879,132 @@ function bindRowDetails(){
     }
   });
   document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeDetail(); });
+}
+
+/* ----------------------------------------------------------------------- */
+/* Toast de novo crítico + Saúde dos dados                                  */
+/* ----------------------------------------------------------------------- */
+function showToast(msg, cls){
+  const wrap = document.getElementById('toast-container');
+  if(!wrap) return;
+  const t = document.createElement('div');
+  t.className = 'toast ' + (cls || '');
+  t.innerHTML = msg;
+  wrap.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 6500);
+}
+let _knownCrit = null;
+function checkNewCriticals(){
+  const crit = buildAlerts().filter(a => a.cls === 'b-vermelho');
+  const cur = new Set(crit.map(a => a.origem + ':' + a.protocolo));
+  if(_knownCrit !== null){
+    crit.forEach(a => {
+      const k = a.origem + ':' + a.protocolo;
+      if(!_knownCrit.has(k)) showToast(`<b>Novo alerta crítico</b><br>${escapeHtml(a.origem)} · ${escapeHtml(a.protocolo)} — ${escapeHtml(a.what)}`, 'toast-crit');
+    });
+  }
+  _knownCrit = cur;
+}
+function fmtRelativo(ms){
+  const min = Math.round((Date.now() - ms) / 60000);
+  if(min < 1) return 'agora mesmo';
+  if(min === 1) return 'há 1 min';
+  if(min < 60) return `há ${min} min`;
+  return `há ${Math.round(min/60)}h`;
+}
+function updateDataHealth(){
+  const dot = document.querySelector('.live-dot'), pill = document.querySelector('.live-pill'), lbl = $('#lastUpdateLabel');
+  if(!dot || !lbl) return;
+  const errs = DASHBOARD_DATA._loadErrors || [];
+  if(errs.length){
+    dot.style.background = 'var(--red)';
+    if(pill) pill.title = 'Falha ao carregar: ' + errs.join(' · ');
+    lbl.textContent = `⚠ ${errs.length} aba(s) com erro`;
+    return;
+  }
+  const ms = DASHBOARD_DATA._lastSyncMs;
+  if(!ms){ lbl.textContent = 'Sincronizando…'; return; }
+  const ageMin = (Date.now() - ms) / 60000;
+  dot.style.background = ageMin > 12 ? 'var(--amber)' : 'var(--green)';
+  if(pill) pill.title = ageMin > 12 ? 'Os dados podem estar desatualizados.' : 'Dados atualizados.';
+  lbl.textContent = `Atualizado ${fmtRelativo(ms)}`;
+}
+function startHealthMonitor(){ setInterval(updateDataHealth, 30000); }
+
+/* ----------------------------------------------------------------------- */
+/* Busca global (protocolo / placa / destino em todas as abas)              */
+/* ----------------------------------------------------------------------- */
+function bindGlobalSearch(){
+  const inp = $('#global-search'), box = $('#global-results');
+  if(!inp || !box) return;
+  const run = () => {
+    const q = inp.value.trim().toLowerCase();
+    if(q.length < 2){ box.classList.remove('open'); box.innerHTML = ''; return; }
+    const seen = new Set(), hits = [];
+    const scan = (arr, getWhere) => (arr || []).forEach(d => {
+      const p = String(d.protocolo || '').trim();
+      if(!p || seen.has(p)) return;
+      const hay = `${p} ${d.placa||''} ${d.destino||''} ${d.origem||''} ${d.rota||''}`.toLowerCase();
+      if(hay.includes(q)){ seen.add(p); hits.push({ p, w: getWhere(d) }); }
+    });
+    scan(DASHBOARD_DATA.etd, d => d.destino || d.placa || '');
+    scan(DASHBOARD_DATA.eta, d => `${d.origem||''} → ${d.destino||''}`);
+    const top = hits.slice(0, 8);
+    box.innerHTML = top.length
+      ? top.map(h => `<div class="gs-item" data-proto="${escapeHtml(h.p)}"><span class="gs-p">${escapeHtml(h.p)}</span><span class="gs-w">${escapeHtml(h.w)}</span></div>`).join('')
+      : `<div class="gs-empty">Nada encontrado para "${escapeHtml(q)}"</div>`;
+    box.classList.add('open');
+  };
+  inp.addEventListener('input', run);
+  inp.addEventListener('focus', run);
+  box.addEventListener('click', e => {
+    const it = e.target.closest('.gs-item'); if(!it) return;
+    openDetail(it.dataset.proto); box.classList.remove('open'); inp.value = ''; inp.blur();
+  });
+  document.addEventListener('click', e => { if(!e.target.closest('.gsearch')) box.classList.remove('open'); });
+}
+
+/* ----------------------------------------------------------------------- */
+/* Observar protocolo (watch list em localStorage)                          */
+/* ----------------------------------------------------------------------- */
+function getWatch(){ try { return JSON.parse(localStorage.getItem('dhl_watch') || '[]'); } catch(e){ return []; } }
+function isWatched(p){ return getWatch().includes(p); }
+function toggleWatch(p){
+  let w = getWatch();
+  w = w.includes(p) ? w.filter(x => x !== p) : w.concat(p);
+  try { localStorage.setItem('dhl_watch', JSON.stringify(w)); } catch(e){}
+  renderWatch();
+  const btn = $('#dt-watch');
+  if(btn && btn.dataset.proto === p){
+    const on = w.includes(p);
+    btn.classList.toggle('on', on);
+    btn.textContent = on ? '★ Em observação' : '☆ Observar este protocolo';
+  }
+}
+function watchStatus(p){
+  const etd = (DASHBOARD_DATA.etd || []).find(d => String(d.protocolo).trim() === p);
+  const eta = (DASHBOARD_DATA.eta || []).find(d => String(d.protocolo).trim() === p);
+  if(etd){
+    if(etd.finalizada) return { txt:'Finalizado', cls:'b-cinza' };
+    if(etd.parado) return { txt:'Parado', cls:'b-amarelo' };
+    return { txt: etd.riscoTexto || 'Em viagem', cls: etd.risco==='vermelho'?'b-vermelho':(etd.risco==='amarelo'?'b-amarelo':'b-verde') };
+  }
+  if(eta) return { txt: eta.classificacaoTexto || 'ETA', cls: eta.classificacao==='vermelho'?'b-vermelho':(eta.classificacao==='cinza'?'b-cinza':'b-verde') };
+  return { txt:'—', cls:'b-cinza' };
+}
+function renderWatch(){
+  const el = $('#watch-list'); if(!el) return;
+  const w = getWatch();
+  const cnt = $('#watch-cnt'); if(cnt) cnt.textContent = w.length;
+  if(!w.length){
+    el.innerHTML = `<div class="empty-state" style="padding:16px 8px">Nenhum protocolo em observação. Abra um protocolo (clique numa linha) e toque em "Observar".</div>`;
+    return;
+  }
+  el.innerHTML = w.map(p => {
+    const s = watchStatus(p);
+    return `<div class="watch-item" data-proto="${escapeHtml(p)}"><span class="mono">${escapeHtml(p)}</span><span class="badge ${s.cls}"><span class="badge-dot"></span>${escapeHtml(s.txt)}</span></div>`;
+  }).join('');
 }
 
 // anima os números dos KPIs (count-up) na carga e a cada atualização
@@ -919,10 +1052,11 @@ function renderAll(){
   updateNavHealth();
   recordSnapshot();
   renderAlertas();
+  renderWatch();
+  checkNewCriticals();
   renderTrend();
   animateNumbers();
-  const lu = DASHBOARD_DATA.lastUpdate ? fmtDateTime(DASHBOARD_DATA.lastUpdate) : '—';
-  $('#lastUpdateLabel').textContent = `Atualizado ${lu}`;
+  updateDataHealth();
 }
 
 /* ----------------------------------------------------------------------- */
@@ -977,8 +1111,32 @@ function bindTabs(){
       // o mapa precisa recalcular tamanho quando a aba fica visível
       if(tab==='mapa') renderFleetMap();
       if(tab==='alertas'){ renderAlertas(); renderTrend(); }
+      saveView();
     });
   });
+}
+
+/* ---- Lembrar a visão: aba ativa + filtros (localStorage) ----------------- */
+function saveView(){
+  try {
+    const btn = document.querySelector('.tab-btn.active');
+    localStorage.setItem('dhl_view', JSON.stringify({
+      tab: btn ? btn.dataset.tab : 'eta',
+      eta: filters.eta, etd: filters.etd
+    }));
+  } catch(e){}
+}
+function restoreView(){
+  try {
+    const v = JSON.parse(localStorage.getItem('dhl_view') || '{}');
+    if(v.eta) Object.keys(filters.eta).forEach(k => { if(v.eta[k] !== undefined) filters.eta[k] = v.eta[k]; });
+    if(v.etd) Object.keys(filters.etd).forEach(k => { if(v.etd[k] !== undefined) filters.etd[k] = v.etd[k]; });
+    return v.tab || 'eta';
+  } catch(e){ return 'eta'; }
+}
+function activateTab(tab){
+  const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+  if(btn) btn.click();
 }
 
 /* ---- Exportar visão filtrada para CSV (separador ; + BOM p/ Excel BR) ---- */
@@ -1041,13 +1199,13 @@ function makeTablesSortable(){
 }
 
 function bindFilters(){
-  $('#f-eta-search').addEventListener('input',  e=>{ filters.eta.search=e.target.value; refreshEta(); });
+  $('#f-eta-search').addEventListener('input',  e=>{ filters.eta.search=e.target.value; refreshEta(); saveView(); });
   $('#clearEtaFilters').addEventListener('click', ()=>{
     filters.eta = { classe:[], status:[], tipo:[], resp:[], search:'' };
     $('#f-eta-search').value=''; refreshEta(); syncFilterUI('eta');
   });
 
-  $('#f-etd-search').addEventListener('input',   e=>{ filters.etd.search=e.target.value; refreshEtd(); });
+  $('#f-etd-search').addEventListener('input',   e=>{ filters.etd.search=e.target.value; refreshEtd(); saveView(); });
   $('#clearEtdFilters').addEventListener('click', ()=>{
     filters.etd = { banda:[], status:[], tipo:[], destino:[], parados:[], posto:[], search:'' };
     $('#f-etd-search').value=''; refreshEtd(); syncFilterUI('etd');
@@ -1123,6 +1281,9 @@ async function boot(){
   startClock();
   makeTablesSortable();
   bindRowDetails();
+  bindGlobalSearch();
+  startHealthMonitor();
+  const savedTab = restoreView();   // recupera filtros + aba ativa salvos
 
   // Aviso: aberto como arquivo (file://) bloqueia o fetch dos CSVs do Google
   const abertoComoArquivo = (location.protocol === 'file:');
@@ -1143,6 +1304,12 @@ async function boot(){
   initEtaFilters();
   initEtdFilters();
   renderAll();
+
+  // aplica a visão salva (valores de busca, contadores de filtro, aba ativa)
+  if($('#f-eta-search')) $('#f-eta-search').value = filters.eta.search || '';
+  if($('#f-etd-search')) $('#f-etd-search').value = filters.etd.search || '';
+  syncFilterUI('eta'); syncFilterUI('etd');
+  if(savedTab && savedTab !== 'eta') activateTab(savedTab);
 
   if(abertoComoArquivo && DATA_SOURCE === 'sheets'){
     setStatus('⚠ Aberto como arquivo — rode o abrir-painel.bat p/ dados reais');
@@ -1570,6 +1737,8 @@ async function loadFromSheets(){
     }
   });
   DASHBOARD_DATA.lastUpdate = new Date().toISOString();
+  DASHBOARD_DATA._lastSyncMs = Date.now();
+  DASHBOARD_DATA._loadErrors = errors;
   if(errors.length) throw new Error(errors.join(' · '));
 }
 
