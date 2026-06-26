@@ -618,6 +618,7 @@ function refreshEta(){
   renderEtaRibbon(rows);
   renderEtaTable(rows);
   renderEtaCharts(rows);
+  reapplySorts(); markWatched();
 }
 function refreshEtd(){
   const rows = getEtdFiltered();
@@ -625,6 +626,7 @@ function refreshEtd(){
   renderEtdRibbon(rows);
   renderEtdBuckets(rows.filter(d => !d.naoPrioritaria));
   renderEtdTables(rows);
+  reapplySorts(); markWatched();
 }
 
 /* ----------------------------------------------------------------------- */
@@ -928,9 +930,30 @@ function updateDataHealth(){
   const ageMin = (Date.now() - ms) / 60000;
   dot.style.background = ageMin > 12 ? 'var(--amber)' : 'var(--green)';
   if(pill) pill.title = ageMin > 12 ? 'Os dados podem estar desatualizados.' : 'Dados atualizados.';
-  lbl.textContent = `Atualizado ${fmtRelativo(ms)}`;
+  let txt = `Atualizado ${fmtRelativo(ms)}`;
+  if(_nextSyncMs){
+    const s = Math.max(0, Math.round((_nextSyncMs - Date.now()) / 1000));
+    txt += ` · próx. ${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  }
+  lbl.textContent = txt;
 }
-function startHealthMonitor(){ setInterval(updateDataHealth, 30000); }
+let _nextSyncMs = null;   // quando dispara a próxima atualização automática
+function startHealthMonitor(){ setInterval(updateDataHealth, 1000); }   // 1s p/ a contagem regressiva
+
+// atalhos de teclado: 1-6 trocam de aba, "/" foca a busca global, Esc fecha
+function bindKeyboard(){
+  document.addEventListener('keydown', (e) => {
+    if(e.target.matches && e.target.matches('input, textarea')){
+      if(e.key === 'Escape') e.target.blur();
+      return;
+    }
+    if(e.key === '/'){ e.preventDefault(); const s = $('#global-search'); if(s) s.focus(); return; }
+    if(/^[1-6]$/.test(e.key)){
+      const t = ['alertas','eta','etd','xpt','validacao','mapa'][+e.key - 1];
+      if(t) activateTab(t);
+    }
+  });
+}
 
 /* ----------------------------------------------------------------------- */
 /* Busca global (protocolo / placa / destino em todas as abas)              */
@@ -975,6 +998,7 @@ function toggleWatch(p){
   w = w.includes(p) ? w.filter(x => x !== p) : w.concat(p);
   try { localStorage.setItem('dhl_watch', JSON.stringify(w)); } catch(e){}
   renderWatch();
+  markWatched();
   const btn = $('#dt-watch');
   if(btn && btn.dataset.proto === p){
     const on = w.includes(p);
@@ -1055,6 +1079,8 @@ function renderAll(){
   renderWatch();
   checkNewCriticals();
   renderTrend();
+  reapplySorts();
+  markWatched();
   animateNumbers();
   updateDataHealth();
 }
@@ -1180,6 +1206,7 @@ function cmpCell(a, b){
   const ta = (a && a.textContent || '').trim(), tb = (b && b.textContent || '').trim();
   return ta.localeCompare(tb, 'pt-BR', { numeric:true, sensitivity:'base' });
 }
+let _sortState = {};   // tbodyId -> {idx, dir}, p/ manter ordenação após re-render
 function sortTableByHeader(th){
   const table = th.closest('table'), tbody = table && table.querySelector('tbody');
   if(!tbody) return;
@@ -1187,9 +1214,30 @@ function sortTableByHeader(th){
   const dir = th.getAttribute('data-sort') === 'asc' ? -1 : 1;
   th.parentNode.querySelectorAll('th').forEach(h => h.removeAttribute('data-sort'));
   th.setAttribute('data-sort', dir === 1 ? 'asc' : 'desc');
+  if(tbody.id) _sortState[tbody.id] = { idx, dir };
+  applySortTo(tbody, idx, dir);
+}
+function applySortTo(tbody, idx, dir){
   const rows = Array.prototype.filter.call(tbody.querySelectorAll('tr'), r => !r.querySelector('.empty-state'));
+  if(rows.length < 2) return;
   rows.sort((a, b) => cmpCell(a.children[idx], b.children[idx]) * dir);
   rows.forEach(r => tbody.appendChild(r));
+}
+// re-aplica a ordenação ativa de cada tabela depois que ela é redesenhada
+function reapplySorts(){
+  Object.keys(_sortState).forEach(id => {
+    const tbody = document.getElementById(id);
+    if(tbody) applySortTo(tbody, _sortState[id].idx, _sortState[id].dir);
+  });
+}
+// marca com ★ os protocolos em observação em qualquer tabela
+function markWatched(){
+  const w = new Set(getWatch());
+  document.querySelectorAll('.table-wrap tbody tr').forEach(tr => {
+    const cell = tr.querySelector('.mono');
+    const p = cell ? cell.textContent.trim() : '';
+    tr.classList.toggle('watched', !!(p && w.has(p)));
+  });
 }
 function makeTablesSortable(){
   document.querySelectorAll('.table-wrap thead th').forEach(th => {
@@ -1243,10 +1291,12 @@ function setStatus(msg){
 function startAutoRefresh(){
   if(autoRefreshTimer) clearInterval(autoRefreshTimer);
   if(DATA_SOURCE !== 'sheets' || !hasSheetUrls()) return;
+  _nextSyncMs = Date.now() + AUTO_REFRESH_MIN * 60 * 1000;
   autoRefreshTimer = setInterval(()=>{
     loadFromSheets()
       .then(()=>{ initEtaFilters(); initEtdFilters(); renderAll(); })
-      .catch(e => setStatus('⚠ ' + e.message));
+      .catch(e => setStatus('⚠ ' + e.message))
+      .finally(()=>{ _nextSyncMs = Date.now() + AUTO_REFRESH_MIN * 60 * 1000; });
   }, AUTO_REFRESH_MIN * 60 * 1000);
 }
 
@@ -1282,6 +1332,7 @@ async function boot(){
   makeTablesSortable();
   bindRowDetails();
   bindGlobalSearch();
+  bindKeyboard();
   startHealthMonitor();
   const savedTab = restoreView();   // recupera filtros + aba ativa salvos
 

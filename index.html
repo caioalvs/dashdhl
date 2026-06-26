@@ -293,6 +293,8 @@
   tbody tr.crit td { background: rgba(212,5,17,0.055); }
   tbody tr.crit:hover td { background: rgba(212,5,17,0.10); }
   tbody tr.crit td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+  tbody tr.watched td { background: rgba(255,204,0,.06); }
+  tbody tr.watched .mono::after { content:' ★'; color: var(--yellow-dim); font-size: 11px; }
 
   /* ===== botão de tema (NOC) ===== */
   #themeBtn { background: var(--rail-2); border:1px solid var(--rail-line); color: var(--rail-text); width:34px; height:34px; border-radius:8px; cursor:pointer; font-size:15px; line-height:1; display:flex; align-items:center; justify-content:center; transition: border-color .15s ease; }
