@@ -692,6 +692,188 @@ function updateNavHealth(){
   setNavBadge('badgeEta', eta.some(d => d.classificacao === 'vermelho') ? 'bad' : '');
 }
 
+/* ----------------------------------------------------------------------- */
+/* Central de Alertas — consolida tudo que exige ação agora                 */
+/* ----------------------------------------------------------------------- */
+function buildAlerts(){
+  const A = [];
+  (DASHBOARD_DATA.eta || []).forEach(d => {
+    if(d.classificacao === 'vermelho')
+      A.push({ sev:3, cls:'b-vermelho', origem:'ETA', protocolo:d.protocolo, what:'Chegada atrasada', where:`${d.origem||'?'} → ${d.destino||'?'}`, detail:(d.atrasoMin!=null?d.atrasoMin+' min de atraso':'') });
+  });
+  (DASHBOARD_DATA.etd || []).forEach(d => {
+    if(d.finalizada || d.naoPrioritaria) return;
+    if(d.risco === 'vermelho')
+      A.push({ sev:3, cls:'b-vermelho', origem:'ETD', protocolo:d.protocolo, what:'Possível atraso', where:d.destino||'?', detail:(d.kmMedio!=null?d.kmMedio+' km/h necessários':'') });
+    if(d.parado)
+      A.push({ sev:2, cls:'b-amarelo', origem:'ETD', protocolo:d.protocolo, what:'Veículo parado', where:d.destino||'?', detail:d.statusSM||'' });
+    if(d.ocorrencia && d.risco === 'vermelho')
+      A.push({ sev:2, cls:'b-amarelo', origem:'ETD', protocolo:d.protocolo, what:'Ocorrência em sistema', where:d.destino||'?', detail:d.ocorrencia });
+  });
+  (DASHBOARD_DATA.validacao || []).forEach(d => {
+    if((d.divergencia||'').trim())
+      A.push({ sev:1, cls:'b-cinza', origem:'PORTAL', protocolo:d.protocolo, what:'Divergência no portal', where:d.servico||'?', detail:d.divergencia });
+  });
+  A.sort((a,b) => b.sev - a.sev);
+  return A;
+}
+function renderAlertas(){
+  const tb = $('#alertas-tbody'); if(!tb) return;
+  const A = buildAlerts();
+  const reds = A.filter(a => a.cls === 'b-vermelho').length;
+  const ambs = A.filter(a => a.cls === 'b-amarelo').length;
+  const greys = A.filter(a => a.cls === 'b-cinza').length;
+  $('#alertas-cnt').textContent = A.length;
+  const hl = $('#alertas-headline');
+  if(hl) hl.innerHTML = A.length ? `<span class="hl-strong">${A.length}</span> ite${A.length>1?'ns':'m'} exige${A.length>1?'m':''} ação agora` : 'Operação sob controle';
+  const rib = $('#ribbon-alertas');
+  if(rib){ rib.classList.remove('state-verde','state-amarelo','state-vermelho'); rib.classList.add(reds?'state-vermelho':(ambs?'state-amarelo':'state-verde')); }
+  const st = $('#alertas-stats');
+  if(st) st.innerHTML = statItem('var(--red)','Críticos',reds) + statItem('var(--amber)','Atenção',ambs) + statItem('var(--grey)','Portal',greys);
+  const nb = $('#badgeAlertas');
+  if(nb){ nb.textContent = A.length; nb.classList.remove('bad','warn'); if(reds) nb.classList.add('bad'); else if(ambs) nb.classList.add('warn'); }
+  if(!A.length){
+    tb.innerHTML = `<tr><td colspan="6"><div class="empty-state">Nenhum item exige ação no momento — operação sob controle.</div></td></tr>`;
+    return;
+  }
+  const gmap = { 'b-vermelho':'Crítico', 'b-amarelo':'Atenção', 'b-cinza':'Info' };
+  tb.innerHTML = A.map(a => `
+    <tr class="${a.cls==='b-vermelho'?'crit':''}">
+      <td><span class="badge ${a.cls}"><span class="badge-dot"></span>${gmap[a.cls]}</span></td>
+      <td><span class="resp-pill">${a.origem}</span></td>
+      <td class="mono">${escapeHtml(a.protocolo)}</td>
+      <td>${escapeHtml(a.what)}</td>
+      <td>${escapeHtml(a.where)}</td>
+      <td>${escapeHtml(a.detail)}</td>
+    </tr>`).join('');
+}
+
+/* ---- Histórico leve (localStorage) + tendência de pontualidade ---------- */
+function snapshotPcts(){
+  const eta = DASHBOARD_DATA.eta || [];
+  const np = eta.filter(d => d.classificacao === 'verde').length, at = eta.filter(d => d.classificacao === 'vermelho').length;
+  const etaPct = (np + at) ? Math.round(np / (np + at) * 100) : null;
+  const prio = (DASHBOARD_DATA.etd || []).filter(d => !d.naoPrioritaria && !d.finalizada);
+  const v = prio.filter(d => d.risco === 'verde').length;
+  const etdPct = prio.length ? Math.round(v / prio.length * 100) : null;
+  return { etaPct, etdPct };
+}
+function recordSnapshot(){
+  const { etaPct, etdPct } = snapshotPcts();
+  try {
+    const h = JSON.parse(localStorage.getItem('dhl_hist') || '[]');
+    h.push({ t: Date.now(), eta: etaPct, etd: etdPct });
+    while(h.length > 60) h.shift();
+    localStorage.setItem('dhl_hist', JSON.stringify(h));
+  } catch(e){}
+}
+function sparkSvg(vals, color){
+  const w = 320, h = 64, pad = 8, n = vals.length;
+  const x = i => pad + (n === 1 ? 0 : i * (w - 2*pad) / (n - 1));
+  const y = v => h - pad - (v / 100) * (h - 2*pad);
+  const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const last = vals[n - 1];
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" style="display:block">
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${x(n-1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="3" fill="${color}"/></svg>`;
+}
+function renderTrend(){
+  const el = $('#trend-spark'); if(!el) return;
+  let h = [];
+  try { h = JSON.parse(localStorage.getItem('dhl_hist') || '[]'); } catch(e){}
+  const vals = h.map(x => x.etd).filter(v => v != null);
+  if(vals.length < 2){
+    el.innerHTML = `<div class="empty-state" style="padding:18px 8px">Coletando leituras… a tendência aparece conforme o painel atualiza (a cada 5 min).</div>`;
+    return;
+  }
+  const cur = vals[vals.length - 1], delta = cur - vals[0];
+  const arrow = delta > 0 ? '▲' : (delta < 0 ? '▼' : '■');
+  const dcolor = delta > 0 ? 'var(--green)' : (delta < 0 ? 'var(--red)' : 'var(--text-dim)');
+  el.innerHTML = sparkSvg(vals, '#16a34a') +
+    `<div style="display:flex;align-items:baseline;gap:10px;margin-top:9px">
+       <span style="font-family:var(--font-num);font-weight:700;font-size:26px;color:var(--text)">${cur}%</span>
+       <span style="font-size:12px;color:${dcolor}">${arrow} ${Math.abs(delta)} pp desde o início</span>
+       <span style="font-size:11px;color:var(--text-dim);margin-left:auto">${vals.length} leituras</span>
+     </div>`;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Painel de detalhe da rota (clique numa linha)                            */
+/* ----------------------------------------------------------------------- */
+function dtField(label, value){
+  if(value == null || value === '') return '';
+  return `<div class="dt-row"><span class="dt-k">${label}</span><span class="dt-v">${escapeHtml(String(value))}</span></div>`;
+}
+function openDetail(proto){
+  const eta = (DASHBOARD_DATA.eta || []).find(d => String(d.protocolo).trim() === proto);
+  const etd = (DASHBOARD_DATA.etd || []).find(d => String(d.protocolo).trim() === proto);
+  const val = (DASHBOARD_DATA.validacao || []).find(d => String(d.protocolo).trim() === proto);
+  const ocor = OCOR_INDEX[proto];
+
+  let action = 'Sem ação pendente para este protocolo no momento.', acls = 'dt-ok';
+  if(etd && etd.risco === 'vermelho'){
+    action = `Verifique este possível atraso: o veículo precisa manter ${etd.kmMedio} km/h de média para chegar no prazo. Acione a torre e o motorista.`; acls = 'dt-crit';
+  } else if(eta && eta.classificacao === 'vermelho'){
+    action = `Chegada atrasada${eta.atrasoMin!=null?` em ${eta.atrasoMin} min`:''}. Confirme o motivo na origem.`; acls = 'dt-crit';
+  } else if(etd && etd.parado){
+    action = `Veículo parado (status SM: ${etd.statusSM||'—'}). Confirme o motivo e acione o condutor.`; acls = 'dt-warn';
+  } else if(val && (val.divergencia||'').trim()){
+    action = `Divergência no portal: ${val.divergencia}. Corrija o cadastro.`; acls = 'dt-warn';
+  } else if(ocor){
+    action = `Ocorrência registrada: ${ocor}. Avalie a necessidade de ação.`; acls = 'dt-warn';
+  }
+
+  let html = `<div class="dt-action ${acls}"><span class="dt-action-ttl">Ação recomendada</span>${escapeHtml(action)}</div>`;
+  if(eta){
+    html += `<div class="dt-sec">Chegada · ETA</div>`
+      + dtField('Resultado', eta.classificacaoTexto) + dtField('Horário máximo', fmtDateTime(eta.horarioMax))
+      + dtField('Chegada real', fmtDateTime(eta.horarioReal)) + dtField('Status (K)', eta.statusK)
+      + dtField('Status (L)', eta.statusL) + dtField('Status viagem (U)', eta.statusViagem)
+      + dtField('Motorista', eta.motorista) + dtField('Placa', eta.placa);
+  }
+  if(etd){
+    html += `<div class="dt-sec">Em viagem · ETD</div>`
+      + dtField('Destino', etd.destino) + dtField('Nomenclatura', etd.rota) + dtField('Placa', etd.placa)
+      + dtField('ETA destino', fmtDateTime(etd.etaDestino)) + dtField('Faixa', etd.riscoTexto)
+      + dtField('Km/h médio nec. (Q)', etd.kmMedio!=null ? etd.kmMedio+' km/h' : '')
+      + dtField('Km faltante', etd.kmFaltante!=null ? etd.kmFaltante+' km' : '')
+      + dtField('Desloc. última 1h (R)', etd.deslocHora!=null ? etd.deslocHora+' km' : '')
+      + dtField('Velocidade (S)', etd.velocidadeAtual!=null ? etd.velocidadeAtual+' km/h' : '')
+      + dtField('Status SM (L)', etd.statusSM)
+      + dtField('Pacotes', etd.pacotes!=null ? etd.pacotes.toLocaleString('pt-BR') : '')
+      + (etd.postoFiscal ? dtField('Posto fiscal', etd.postoSituacao + (etd.postoKm!=null?` · ${etd.postoKm} km`:'')) : '')
+      + (etd.ocorrencia ? dtField('Ocorrência', etd.ocorrencia) : '');
+  }
+  if(val){
+    html += `<div class="dt-sec">Portal · auditoria</div>`
+      + dtField('Status portal', val.statusPortal) + dtField('Divergência', val.divergencia) + dtField('Placas', val.placas);
+  }
+  if(!eta && !etd && !val) html += `<div class="empty-state">Sem dados detalhados para este protocolo.</div>`;
+
+  $('#dt-title').textContent = 'Protocolo ' + proto;
+  $('#dt-body').innerHTML = html;
+  const ov = $('#detail-overlay');
+  ov.style.display = 'flex'; document.body.style.overflow = 'hidden';
+  requestAnimationFrame(() => ov.classList.add('open'));
+}
+function closeDetail(){
+  const ov = $('#detail-overlay'); if(!ov) return;
+  ov.classList.remove('open'); document.body.style.overflow = '';
+  setTimeout(() => { ov.style.display = 'none'; }, 200);
+}
+function bindRowDetails(){
+  document.addEventListener('click', (e) => {
+    if(e.target.closest('#dt-close') || e.target.id === 'detail-overlay'){ closeDetail(); return; }
+    const tr = e.target.closest('.table-wrap tbody tr');
+    if(tr && !tr.querySelector('.empty-state')){
+      const cell = tr.querySelector('.mono');
+      const proto = cell ? cell.textContent.trim() : '';
+      if(proto) openDetail(proto);
+    }
+  });
+  document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeDetail(); });
+}
+
 // anima os números dos KPIs (count-up) na carga e a cada atualização
 function animateNumbers(){
   if(typeof requestAnimationFrame === 'undefined') return;
@@ -735,6 +917,9 @@ function renderAll(){
   if(mm) mm.textContent = `${etdAtivos.length} em viagem · ${etaAtras + etdCrit} exigindo atenção`;
   renderFleetMap();
   updateNavHealth();
+  recordSnapshot();
+  renderAlertas();
+  renderTrend();
   animateNumbers();
   const lu = DASHBOARD_DATA.lastUpdate ? fmtDateTime(DASHBOARD_DATA.lastUpdate) : '—';
   $('#lastUpdateLabel').textContent = `Atualizado ${lu}`;
@@ -784,14 +969,74 @@ function bindTabs(){
       $$('.tab-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       const tab = btn.dataset.tab;
-      ['eta','etd','xpt','validacao','mapa'].forEach(t=>{
+      ['eta','etd','xpt','validacao','mapa','alertas'].forEach(t=>{
         $('#view-'+t).style.display = (t===tab)?'block':'none';
       });
       // recalcula tamanho dos gráficos da aba aberta
       Object.values(charts).forEach(c=>c.resize());
       // o mapa precisa recalcular tamanho quando a aba fica visível
       if(tab==='mapa') renderFleetMap();
+      if(tab==='alertas'){ renderAlertas(); renderTrend(); }
     });
+  });
+}
+
+/* ---- Exportar visão filtrada para CSV (separador ; + BOM p/ Excel BR) ---- */
+function toCsv(cols, rows){
+  const esc = v => { v = (v==null?'':String(v)); return /[";\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; };
+  return [cols.map(c=>c.label).join(';'), ...rows.map(r => cols.map(c=>esc(c.get(r))).join(';'))].join('\r\n');
+}
+function downloadCsv(name, text){
+  const blob = new Blob(['﻿'+text], { type:'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1500);
+}
+function csvStamp(){
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+}
+function exportEtaCsv(){
+  const cols = [
+    {label:'Protocolo', get:d=>d.protocolo}, {label:'Rota', get:d=>d.rota}, {label:'Motorista', get:d=>d.motorista},
+    {label:'Placa', get:d=>d.placa}, {label:'Horario maximo', get:d=>fmtDateTime(d.horarioMax)}, {label:'Chegada real', get:d=>fmtDateTime(d.horarioReal)},
+    {label:'Resultado', get:d=>d.classificacaoTexto}, {label:'Status K', get:d=>d.statusK}, {label:'Status L', get:d=>d.statusL},
+    {label:'Status viagem', get:d=>d.statusViagem}
+  ];
+  downloadCsv(`eta_${csvStamp()}.csv`, toCsv(cols, getEtaFiltered()));
+}
+function exportEtdCsv(){
+  const cols = [
+    {label:'Protocolo', get:d=>d.protocolo}, {label:'Nomenclatura', get:d=>d.rota}, {label:'Placa', get:d=>d.placa},
+    {label:'Destino', get:d=>d.destino}, {label:'ETA destino', get:d=>fmtDateTime(d.etaDestino)}, {label:'Km faltante', get:d=>d.kmFaltante},
+    {label:'Km/h medio (Q)', get:d=>d.kmMedio}, {label:'Faixa', get:d=>d.riscoTexto}, {label:'Desloc 1h (R)', get:d=>d.deslocHora},
+    {label:'Velocidade (S)', get:d=>d.velocidadeAtual}, {label:'Status SM (L)', get:d=>d.statusSM}, {label:'Posto fiscal', get:d=>d.postoSituacao},
+    {label:'Ocorrencia', get:d=>d.ocorrencia}
+  ];
+  downloadCsv(`etd_${csvStamp()}.csv`, toCsv(cols, getEtdFiltered()));
+}
+
+/* ---- Ordenação por clique no cabeçalho da tabela (A→Z / Z→A) ------------- */
+function cmpCell(a, b){
+  const ta = (a && a.textContent || '').trim(), tb = (b && b.textContent || '').trim();
+  return ta.localeCompare(tb, 'pt-BR', { numeric:true, sensitivity:'base' });
+}
+function sortTableByHeader(th){
+  const table = th.closest('table'), tbody = table && table.querySelector('tbody');
+  if(!tbody) return;
+  const idx = Array.prototype.indexOf.call(th.parentNode.children, th);
+  const dir = th.getAttribute('data-sort') === 'asc' ? -1 : 1;
+  th.parentNode.querySelectorAll('th').forEach(h => h.removeAttribute('data-sort'));
+  th.setAttribute('data-sort', dir === 1 ? 'asc' : 'desc');
+  const rows = Array.prototype.filter.call(tbody.querySelectorAll('tr'), r => !r.querySelector('.empty-state'));
+  rows.sort((a, b) => cmpCell(a.children[idx], b.children[idx]) * dir);
+  rows.forEach(r => tbody.appendChild(r));
+}
+function makeTablesSortable(){
+  document.querySelectorAll('.table-wrap thead th').forEach(th => {
+    th.classList.add('sortable');
+    th.addEventListener('click', () => sortTableByHeader(th));
   });
 }
 
@@ -807,6 +1052,8 @@ function bindFilters(){
     filters.etd = { banda:[], status:[], tipo:[], destino:[], parados:[], posto:[], search:'' };
     $('#f-etd-search').value=''; refreshEtd(); syncFilterUI('etd');
   });
+  const eb = $('#exportEta'); if(eb) eb.addEventListener('click', exportEtaCsv);
+  const xb = $('#exportEtd'); if(xb) xb.addEventListener('click', exportEtdCsv);
 
   bindKpiCards();
 
@@ -845,6 +1092,16 @@ function startAutoRefresh(){
   }, AUTO_REFRESH_MIN * 60 * 1000);
 }
 
+// logos oficiais: tenta .svg, depois .png, e por fim cai no desenho (fallback)
+function brandImgRetry(el, alt){
+  if(el.dataset.tried){ const b = el.closest('.lk-brand'); if(b) b.classList.add('fail'); }
+  else { el.dataset.tried = '1'; el.src = alt; }
+}
+function sideLogoFail(el){
+  if(el.dataset.tried){ el.style.display = 'none'; const c = el.parentElement.querySelector('.dhl-chip'); if(c) c.style.display = ''; }
+  else { el.dataset.tried = '1'; el.src = 'dhl.png'; }
+}
+
 function startClock(){
   const el = $('#side-clock');
   if(!el) return;
@@ -864,6 +1121,8 @@ async function boot(){
   bindFilters();
   bindMapControls();
   startClock();
+  makeTablesSortable();
+  bindRowDetails();
 
   // Aviso: aberto como arquivo (file://) bloqueia o fetch dos CSVs do Google
   const abertoComoArquivo = (location.protocol === 'file:');
@@ -1325,6 +1584,18 @@ function hasSheetUrls(){
    Usado para a % concluída da barra: (total - kmFaltante) / total.
    Respeita ~1 req/seg do Nominatim; cada par é resolvido uma única vez.
    ========================================================================= */
+// agrupa os redesenhos disparados pela geocodificação (no máximo 1 a cada ~1,2s)
+let _distRenderTimer = null;
+function scheduleDistRender(){
+  if(_distRenderTimer) return;
+  _distRenderTimer = setTimeout(() => {
+    _distRenderTimer = null;
+    if(typeof refreshEtd === 'function') refreshEtd();
+    const v = document.getElementById('view-mapa');
+    if(v && v.style.display !== 'none' && typeof renderFleetMap === 'function') renderFleetMap();
+  }, 1200);
+}
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function cleanLocation(name){
@@ -1399,8 +1670,7 @@ const DIST = {
         }
       } catch(e){ this.pair[k] = 'FAIL'; this.geom[k] = 'FAIL'; }
       this.save();
-      if(typeof refreshEtd === 'function') refreshEtd();        // re-render com a distância nova
-      if(typeof renderFleetMap === 'function') renderFleetMap(); // atualiza o mapa
+      scheduleDistRender();   // re-render agrupado (evita tempestade de redesenho)
     }
     this.running = false;
   },
