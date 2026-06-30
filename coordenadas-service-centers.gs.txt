@@ -1,0 +1,71 @@
+/**
+ * Preenche a coluna H da aba "Links" com as COORDENADAS (lat, lon) de cada
+ * service center, resolvendo automaticamente os links curtos do Google Maps
+ * (maps.app.goo.gl) que estão na coluna G.
+ *
+ * Como usar:
+ *  1) Abra a planilha "Controle Tracking New".
+ *  2) Menu: Extensões > Apps Script.
+ *  3) Apague o que estiver lá e cole TODO este código.
+ *  4) Confira o nome da aba na linha NOME_DA_ABA abaixo (deve ser exatamente o
+ *     nome da aba dos service centers — provavelmente "Links").
+ *  5) Clique em Executar (▶) na função "preencherCoordenadas".
+ *     Na primeira vez o Google pede autorização — aceite (é sua própria conta).
+ *  6) Pronto: a coluna H é preenchida com "lat, lon". O painel passa a usar isso.
+ *
+ * Pode rodar de novo quando cadastrar service centers novos — ele só preenche
+ * as linhas que ainda estão sem coordenada (não refaz as que já têm).
+ *
+ * Não precisa publicar nada de novo nem mexer no painel. Só rodar e pronto.
+ */
+
+var NOME_DA_ABA = 'Links';   // <- ajuste se a aba tiver outro nome
+var COL_LINK = 7;            // G = link do Maps
+var COL_COORD = 8;           // H = onde as coordenadas serão escritas
+
+function preencherCoordenadas() {
+  var aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(NOME_DA_ABA);
+  if (!aba) { SpreadsheetApp.getUi().alert('Aba "' + NOME_DA_ABA + '" não encontrada. Ajuste NOME_DA_ABA.'); return; }
+  var ultima = aba.getLastRow();
+  var feitos = 0, falhas = 0;
+
+  for (var r = 2; r <= ultima; r++) {
+    var jaTem = String(aba.getRange(r, COL_COORD).getValue() || '').trim();
+    if (jaTem) continue; // já preenchido → pula
+
+    var url = String(aba.getRange(r, COL_LINK).getValue() || '').trim();
+    if (!url) continue;
+
+    try {
+      var full = resolverUrl(url);
+      var m = full.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || full.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (m) {
+        aba.getRange(r, COL_COORD).setValue(m[1] + ', ' + m[2]);
+        feitos++;
+        Utilities.sleep(200);
+      } else {
+        falhas++;
+      }
+    } catch (e) {
+      falhas++;
+    }
+  }
+  SpreadsheetApp.getActiveSpreadsheet().toast('Coordenadas preenchidas: ' + feitos + ' (sem coordenada: ' + falhas + ')', 'Concluído', 8);
+}
+
+// Segue os redirecionamentos do link curto até achar a URL completa (com coordenadas).
+function resolverUrl(url) {
+  for (var i = 0; i < 6; i++) {
+    var resp = UrlFetchApp.fetch(url, { followRedirects: false, muteHttpExceptions: true });
+    var code = resp.getResponseCode();
+    var h = resp.getHeaders();
+    var loc = h['Location'] || h['location'];
+    if (code >= 300 && code < 400 && loc) {
+      url = loc;
+      if (/!3d-?\d+\.\d+|@-?\d+\.\d+/.test(url)) return url; // já tem coordenada
+    } else {
+      return url; // não redirecionou mais
+    }
+  }
+  return url;
+}

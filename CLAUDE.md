@@ -3,42 +3,67 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## O que é isto
-Painel web estático (HTML/CSS/JS puro, sem framework, Chart.js pra gráficos) que **lê** a planilha Google "Controle Tracking New" — a mesma que o robô `Sentinela` (`../Automacao_ML/robo_ml.py`) alimenta. O painel só lê; não escreve na planilha nem interage com os robôs. Publicado em produção via GitHub Pages (`caioalvs/dashdhl`). Único projeto desta pasta `Claudinho/` que é um repositório git de fato — os outros dois são só pastas locais.
+Painel web estático (HTML/CSS/JS puro, Chart.js pra gráficos, Leaflet pro mapa) que **lê** a planilha Google "Controle Tracking New" — a mesma que o robô `Sentinela` (`../Automacao_ML/robo_ml.py`) alimenta. O painel só lê; não escreve na planilha nem interage com os robôs. Publicado em produção via GitHub Pages (`caioalvs/dashdhl`). Único projeto desta pasta `Claudinho/` que é um repositório git de fato.
 
 ## Como rodar
-- **Local**: `python server.py` ou duplo-clique em `abrir-painel.bat` → abre `http://localhost:8000/index.html`. O `.bat` tenta nesta ordem `py`, `python`, depois `npx http-server`; `server.py` é um `http.server` simples com headers `no-store/no-cache` pra refletir mudanças no reload sem precisar de hard-refresh.
-- **Nunca abrir `index.html` por duplo clique direto** — rodando como `file://` o navegador bloqueia o `fetch()` dos CSVs do Google, e o painel cai silenciosamente pra aviso de erro.
-- **Sem testes automatizados/CI.** Validação manual descrita no README: `node --check app.js` (só sintaxe) + confirmação visual de que cada `$('#id')` referenciado em `app.js` existe em `index.html`.
-- **Publicar**: commit + push pra `main` no repo `caioalvs/dashdhl` — GitHub Pages republica sozinho em ~1–2 min. Os dados da planilha atualizam sozinhos (auto-refresh no cliente), não precisa republicar pra isso.
+- **Local**: `python server.py` ou duplo-clique em `abrir-painel.bat` → abre `http://localhost:8000/index.html`. O `server.py` é um `http.server` com headers `no-store/no-cache`.
+- **Nunca abrir `index.html` por duplo clique direto** — como `file://` o navegador bloqueia o `fetch()` dos CSVs do Google e o painel cai pra aviso de erro.
+- **Sem testes automatizados/CI.** Validação: `node --check app.js` (sintaxe) + conferir visualmente. Como o mount do ambiente pode ficar congelado, valida-se lógica nova escrevendo a função isolada em `/tmp/snipN.js` e rodando `node`.
+- **Publicar**: commit + push pra `main` no repo `caioalvs/dashdhl` — GitHub Pages republica em ~1–2 min. Os dados da planilha atualizam sozinhos no cliente (auto-refresh 5 min), não precisa republicar pra isso.
 
 ## Arquitetura
-Três arquivos fazem o painel; tudo roda no navegador, sem build step/bundler/transpilação:
-- **`index.html`** — estrutura, tema (amarelo `#FFCC00` / vermelho `#D40511` da DHL), layout responsivo (sidebar no desktop, barra inferior no celular).
-- **`app.js`** (~1100 linhas) — toda a lógica. Sem módulos/import; um único arquivo carregado depois de `data.js`.
-- **`data.js`** — dados de **exemplo**, usados só quando `DATA_SOURCE = 'sample'`; em produção (`DATA_SOURCE = 'sheets'`, já o valor atual no topo de `app.js`) é ignorado.
+Tudo roda no navegador, sem build step/bundler:
+- **`index.html`** — estrutura, tema (amarelo `#FFCC00` / vermelho `#D40511` da DHL, fundo claro "premium"; tema escuro NOC opcional via `body.noc`), layout responsivo (sidebar no desktop, barra inferior no celular). Chart.js + Leaflet carregados no fim do `<body>`.
+- **`app.js`** (~2200+ linhas) — toda a lógica. Sem módulos; um arquivo carregado depois de `data.js`.
+- **`data.js`** — dados de **exemplo**, usados só quando `DATA_SOURCE = 'sample'`; em produção (`'sheets'`, valor atual) é ignorado.
+- **`coordenadas-service-centers.gs.txt`** — Apps Script de apoio (roda na planilha, não no painel): preenche a coluna H da aba Links com as coordenadas, resolvendo os links curtos do Maps. Re-rodável; pode ter gatilho diário.
 
 ### Fonte de dados e ciclo de carga (`app.js`)
-- Config no topo do arquivo: `DATA_SOURCE` (`'sample'`/`'sheets'`) e `SHEET_CSV` — mapa de URLs de CSV publicado (Arquivo → Compartilhar → Publicar na web, cada aba como CSV) para as abas `eta`, `etd`, `xpt`, `validacao`, `sm` (apoio: origem/destino por protocolo) e `acompCpt` (opcional, ainda vazio — aba "ACOMP CPT" é só placeholder até ser preenchida). **As URLs já estão preenchidas com a planilha real** — são links de "publicar na web" (públicos por natureza, mas evite divulgar/colar em lugares externos sem necessidade).
-- `boot()` (disparado em `DOMContentLoaded`) detecta se está rodando como `file://` (mostra aviso e usa só os dados de exemplo), senão chama `loadFromSheets()`, monta filtros (`initEtaFilters`/`initEtdFilters`), renderiza tudo (`renderAll()`) e arma o auto-refresh (`startAutoRefresh`, a cada `AUTO_REFRESH_MIN` = 5 min).
-- `loadFromSheets()` busca todas as abas configuradas em paralelo (`Promise.allSettled`) via `fetchTab()` → `parseCsv()` → mapeador da aba (`mapEtaRow`, `mapEtdRow`, `mapXptRow`, `mapValRow`, `mapSmRow`, `mapAcompRow`); falha em uma aba não derruba as outras, e o erro de cada uma aparece concatenado no cabeçalho.
-- `parseCsv()` é um parser RFC 4180 escrito à mão (aspas, vírgulas e quebras de linha dentro de campo); `cell(row,'X')` lê coluna por **letra** (posição), e `pick(idx, aliases, fallback)` é o fallback tolerante por **nome** de cabeçalho (aceita variação de acento/maiúscula) — pra ajustar um cabeçalho que mudou na planilha, normalmente basta adicionar o nome novo na lista de aliases do mapeador correspondente, sem tocar no resto.
-- Datas/números são parseados em formato BR (`parseDateBR`, `parseNum`: `18/06/2026 04:00`, `2.895`, `1.234,5`).
+- Config no topo: `DATA_SOURCE` (`'sample'`/`'sheets'`) e `SHEET_CSV` — mapa de URLs de CSV publicado (cada aba como CSV) para as abas:
+  - **abas do painel**: `eta`, `etd`, `xpt`, `validacao`
+  - **apoio**: `sm` (origem/destino cidade+UF por protocolo), `ocorrencias` (motivo em sistema), `base` (fonte central de status), `links` (sigla → nome/endereço/coordenada do service center), `od` (nomenclatura → siglas/nomes de origem e destino)
+  - `acompCpt` segue como placeholder (URL vazia).
+- `boot()` (em `DOMContentLoaded`) detecta `file://` (mostra aviso, usa exemplo), senão chama `loadFromSheets()`, monta filtros, `renderAll()` e arma o auto-refresh (`AUTO_REFRESH_MIN` = 5 min). Também liga `bindViewTools` (telão/PDF/compacto), `bindGlobalSearch`, `bindKeyboard`, `DIST.load()`.
+- `loadFromSheets()` busca todas as abas em paralelo (`Promise.allSettled`); falha em uma não derruba as outras.
+- `parseCsv()` é parser RFC 4180 à mão; trata a **linha 0 como cabeçalho** (abas sem cabeçalho perdem a 1ª linha). `cell(row,'X')` lê coluna por **letra** (inclusive duplas, ex. `AM`); `pick(idx, aliases)` é fallback tolerante por **nome** de cabeçalho.
+- Datas/números em formato BR (`parseDateBR`, `parseNum`).
 
 ### Regras de negócio por aba (lidas por posição de coluna)
-- **ETA**: `F` = horário máximo de chegada, `G` = horário real. `G < F` → No prazo; `G ≥ F` → Atrasado (guarda minutos de atraso); `G` vazio → Aguardando. `K`/`L` = status da rota, só exibidos.
-- **ETD**: `A` protocolo, `B` nomenclatura, `C` placa, `F` horário de destino, `L` status da SM (contém "parado" → entra na lista de Parados), `Q` km/h médio necessário (faixa: ≤55 No prazo, 56–65 Risco, >65 Possível atraso), `R` km percorridos na última hora, `S` velocidade atual. Rotas XPT/REV/reversa vão pra tabela "Não prioritárias". Origem/destino reais vêm da aba **SM** (ligada pelo protocolo) — a coluna `O` do ETD é só o sinal de GPS, não o destino.
-- **SM** (apoio, não é aba própria do painel): `F` protocolo, `O`/`P` cidade/UF de origem, `T`/`U` cidade/UF de destino.
-- **XPT**: validação de checkpoint (bipagem CPT). **PORTAL**: auditoria Meli × Portal × SM (divergências).
+- **ETA**: `F` = horário máx. de chegada, `G` = horário real. `G < F` No prazo; `G ≥ F` Atrasado; `G` vazio Aguardando. `U` = status da viagem.
+- **ETD**: `A` protocolo (= **Rostering ID** da Base), `B` nomenclatura, `C` placa, `F` horário de destino, `L` status da SM, `Q` km/h médio necessário (≤46 No prazo, 47–55 Risco, >55 Possível atraso), `R` km última hora, `S` velocidade, `U`/`V` posto fiscal. Rotas XPT/REV/reversa vão pra "Não prioritárias".
+- **SM** (apoio): `F` protocolo, `O`/`P` cidade/UF origem, `T`/`U` cidade/UF destino.
+- **Base** (apoio, **fonte central**, liga por **Rostering ID** = protocolo do ETD): `B` Rostering ID, `A` Route ID, `T` Origem ATD (saída real), `AM` **Estado** (`Pendente`/`Em andamento`/`Finalizado`/`Cancelado`), `AN` Substatus, `AQ` Causa raiz do incidente.
+- **Origem-destino** (apoio, liga por **nomenclatura** = col B do ETD): `B`/`C` sigla/nome origem, `D`/`E` sigla/nome destino, `F` nomenclatura.
+- **Links** (apoio, liga por **sigla**): `A` nome/cidade, `B` sigla, `E` endereço escrito, `G` link do Maps, `H` coordenada `lat, lon` (preenchida pelo Apps Script).
+- **XPT**: validação de checkpoint (bipagem CPT). **PORTAL** (`validacao`): auditoria, `H` status portal, `O` divergência.
 
-### Barra de progresso por distância (objeto `DIST`, perto do fim de `app.js`)
-`% = (distância total origem→destino − km faltante) / distância total`. Distância total resolvida por geocodificação gratuita: **Nominatim** (cidade+UF → lat/lon) + **OSRM** (rota rodoviária real, não linha reta) — encadeados em `DIST.geocode()`/`DIST.route()`, com fila (`DIST.queue`/`DIST.run()`) e cache em `localStorage` (`dhl_geo`, `dhl_pair`) pra cada par origem/destino resolver só uma vez. Respeita o rate limit do Nominatim (~1 req/seg, `sleep(1100)` entre chamadas). Enquanto resolve, a célula mostra "…"; se a cidade não geocodificar, "s/ rota".
+### Status pela Base (correção do "aguardando início" e do "finalizado")
+A Base **manda sobre a SM** (`enrichData`, loop do ETD):
+- `Estado = Pendente` → `naoIniciada`: a rota não saiu; não conta como parado/risco/ofensor/alerta, sai do cálculo de SLA e do mapa, e aparece na tabela "Aguardando início".
+- `Estado = Finalizado` ou `Cancelado` → oculta (`finalizada`).
+- `Estado = Em andamento` → **mostra**, mesmo que a SM tenha finalizado antes (divergência: SM finaliza cedo, Base ainda em viagem → continua visível pra corrigir).
+- Sem registro na Base → cai no comportamento da SM (`L` contém "finaliz" → oculta).
 
-### Interatividade
-- **Filtros multi-seleção** (`buildMultiSelect`, checkboxes; vazio = todos) nas abas ETA/ETD, estado em `filters.eta`/`filters.etd`.
-- **KPIs clicáveis** (`bindKpiCards`): clicar num card filtra as tabelas (ex. "Atrasados", "Risco", "Parados"); o card "Total" limpa o filtro; o card ativo mostra "✓ filtrando" (`syncKpiActive`).
+### Localização precisa do service center (mapa + distância)
+A linha/pontilhado e a distância usam a **coordenada exata** do service center, não o centro da cidade:
+1. **Coluna H** da Links (`lat, lon`) tem prioridade; senão
+2. extrai do link do Maps (`!3d!4d` = pin exato, ou `@lat,lon` = centro); senão
+3. geocodifica o endereço escrito (col E) via Nominatim — **mas** muitos endereços são marcos de rodovia que o Nominatim não acha; por isso a coluna H é a fonte boa; senão
+4. cai pra cidade+UF da SM (fallback).
+`DIST.seed(str, coords)` injeta coords conhecidas no cache (`dhl_geo`) sem chamar Nominatim. A rota rodoviária real vem do OSRM (`DIST.route`), com geometria cacheada (`dhl_geom`) e `pointAlong` posicionando o veículo sobre a estrada.
+
+### Abas/visões do painel
+ALERTAS (kanban por prioridade), **GESTÃO** (placar SLA, tendência de pontualidade, atrasos por destino clicável, principais ofensores com motivo, resumo clicável), ETA, ETD, XPT, PORTAL, MAPA. Nav com ícones SVG.
+
+### Interatividade e recursos
+- **Filtros multi-seleção** + **cabeçalhos ordenáveis** (A-Z/Z-A) + **KPIs clicáveis** (ETA/ETD).
+- **Busca global**, **observar protocolo** (fixar), **detalhe da rota** (drawer com ação recomendada, dados da Base, service center origem/destino com endereço + "Abrir no mapa").
+- **Modo telão** (tela cheia rotativa pra TV), **Imprimir/PDF** (print CSS), **modo compacto** de tabela.
+- **Toasts** de novo crítico, **saúde dos dados** (contagem regressiva do próximo sync), **histórico leve** em `localStorage` pra tendência.
+- Caches em `localStorage`: `dhl_geo`/`dhl_pair`/`dhl_geom` (geo/rota), `dhl_hist` (snapshots), `dhl_view` (aba+filtros), `dhl_watch` (observados), `dhl_compact`, `dhl_theme`.
 
 ## Pontos de atenção
-- `DATA_SOURCE` já está em `'sheets'` com `SHEET_CSV` preenchido com URLs reais da planilha de produção — qualquer teste local já bate na planilha de verdade (modo somente-leitura, então é seguro, mas não é um ambiente isolado de "exemplo").
-- Mudança de cabeçalho na planilha de origem normalmente não exige tocar na lógica — só adicionar o alias novo em `pick(...)` do mapeador certo. Mudança de **posição** de coluna (lidas por letra via `cell(row,'X')`) é mais arriscada: exige atualizar a letra hardcoded no mapeador correspondente.
-- A aba **ACOMP CPT** está deliberadamente incompleta (`acompCpt: ''`, `mapAcompRow` existe mas sem URL ligada) — é esperado, só falta publicar a aba e colar a URL quando o usuário decidir ativar.
-- Sem testes automatizados nem bundler: qualquer mudança em `app.js` se valida abrindo o painel local (`abrir-painel.bat`) e observando as 4 abas com dado real.
+- Mudança de **posição** de coluna nas abas exige atualizar a letra hardcoded no mapeador. Mudança de **nome** de cabeçalho normalmente só precisa de novo alias em `pick(...)`.
+- A ligação Origem-destino é por nomenclatura (col F): rotas novas sem cadastro caem no fallback da SM até serem adicionadas na aba.
+- Service centers sem coordenada (coluna H vazia e link sem `@`/`!3d`) caem no fallback de cidade — preencher a H (script ou manual) resolve.
+- Sem testes automatizados nem bundler: validar abrindo o painel local e/ou rodando funções isoladas no Node.

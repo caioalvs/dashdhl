@@ -43,6 +43,9 @@ const SHEET_CSV = {
   validacao:'https://docs.google.com/spreadsheets/d/e/2PACX-1vQIA0s8fgtB3zxdzJ7xPoWoaVgxO0R7IFDwaVqinmhm0AMDWDLhRXwzFHvNlosniSamBgxokptIS2Ic/pub?gid=217934034&single=true&output=csv',
   sm:       'https://docs.google.com/spreadsheets/d/e/2PACX-1vQIA0s8fgtB3zxdzJ7xPoWoaVgxO0R7IFDwaVqinmhm0AMDWDLhRXwzFHvNlosniSamBgxokptIS2Ic/pub?gid=810330774&single=true&output=csv',  // aba SM: origem/destino (cidade+UF) por protocolo
   ocorrencias:'https://docs.google.com/spreadsheets/d/e/2PACX-1vQIA0s8fgtB3zxdzJ7xPoWoaVgxO0R7IFDwaVqinmhm0AMDWDLhRXwzFHvNlosniSamBgxokptIS2Ic/pub?gid=761153438&single=true&output=csv',  // aba Ocorrências: A=protocolo, O=ocorrência
+  base:     'https://docs.google.com/spreadsheets/d/e/2PACX-1vQIA0s8fgtB3zxdzJ7xPoWoaVgxO0R7IFDwaVqinmhm0AMDWDLhRXwzFHvNlosniSamBgxokptIS2Ic/pub?gid=1531998180&single=true&output=csv',  // aba Base (central): B=Rostering ID, AM=Estado, T=Origem ATD
+  links:    'https://docs.google.com/spreadsheets/d/e/2PACX-1vQIA0s8fgtB3zxdzJ7xPoWoaVgxO0R7IFDwaVqinmhm0AMDWDLhRXwzFHvNlosniSamBgxokptIS2Ic/pub?gid=1061780119&single=true&output=csv',  // aba Links: A=cidade/nome, B=sigla, G=endereço
+  od:       'https://docs.google.com/spreadsheets/d/e/2PACX-1vQIA0s8fgtB3zxdzJ7xPoWoaVgxO0R7IFDwaVqinmhm0AMDWDLhRXwzFHvNlosniSamBgxokptIS2Ic/pub?gid=386959973&single=true&output=csv',  // aba Origem-destino: F=nomenclatura (chave), B/C=sigla/nome origem, D/E=sigla/nome destino
   acompCpt: ''   // (opcional) URL CSV da aba ACOMP CPT
 };
 
@@ -261,6 +264,49 @@ function buildOcorIndex(){
   });
 }
 
+// Índice da aba Base: protocolo (Rostering ID) -> dados centrais (Estado, saída real, causa raiz)
+let BASE_INDEX = {};
+function buildBaseIndex(){
+  BASE_INDEX = {};
+  (DASHBOARD_DATA.base || []).forEach(r => {
+    const p = String(r.protocolo || '').trim();
+    if(!p) return;
+    BASE_INDEX[p] = r;
+  });
+}
+// Índice da aba Links: sigla do service center -> { nome, endereço, Maps }
+let LINK_INDEX = {};
+function buildLinkIndex(){
+  LINK_INDEX = {};
+  (DASHBOARD_DATA.links || []).forEach(r => {
+    const s = normKey(r.sigla);
+    if(!s) return;
+    LINK_INDEX[s] = { nome: r.nome, endereco: r.endereco, maps: r.maps, lat: r.lat, lon: r.lon };
+  });
+}
+function scInfo(sigla){ return LINK_INDEX[normKey(sigla)] || null; }
+// String de geocodificação mais precisa p/ uma sigla + coords exatas (se o link tiver).
+// 1) coords embutidas no link do Maps  2) endereço escrito (col E)  3) cidade de fallback
+function preciseGeo(sigla, sc, fallback){
+  const coords = (sc && sc.lat != null && sc.lon != null) ? { lat: sc.lat, lon: sc.lon } : null;
+  const addr = (sc && sc.endereco || '').trim();
+  let str;
+  if(addr)        str = fallback ? `${addr}, ${fallback}` : addr;   // geocodifica o endereço escrito
+  else if(coords) str = `SC ${sigla}`;                              // só coords: chave única p/ semear
+  else            str = fallback || '';                             // último caso: cidade+UF
+  return { str, coords };
+}
+// Índice Origem-destino: nomenclatura -> { siglas e nomes de origem/destino }
+let OD_INDEX = {};
+function buildOdIndex(){
+  OD_INDEX = {};
+  (DASHBOARD_DATA.od || []).forEach(r => {
+    const k = normKey(r.nomenclatura);
+    if(!k) return;
+    OD_INDEX[k] = r;
+  });
+}
+
 // Ordem de exibição por status da SM — os que já iniciaram aparecem primeiro
 function statusRank(s){
   const t = normKey(s);
@@ -274,6 +320,9 @@ function statusRank(s){
 function enrichData(){
   buildSmIndex();
   buildOcorIndex();
+  buildBaseIndex();
+  buildLinkIndex();
+  buildOdIndex();
   // ---- ETA: no prazo se G < F ; atrasado se G >= F ; aguardando se G vazio
   DASHBOARD_DATA.eta.forEach(d => {
     // fallback p/ modo sample (sem células posicionais)
@@ -331,6 +380,58 @@ function enrichData(){
     if(sm && sm.origem)  d.origem  = sm.origem;
     // Ocorrência (motivo em sistema) ligada pelo protocolo
     d.ocorrencia = OCOR_INDEX[pkey] || '';
+
+    // Base (fonte central): o Estado define se a rota REALMENTE iniciou.
+    // Liga por protocolo = Rostering ID. Corrige o falso "parado" de rotas que nem saíram.
+    const base = BASE_INDEX[pkey];
+    if(base){
+      const est = (base.estado || '').trim().toLowerCase();
+      d.baseEstado = base.estado || '';
+      d.baseSub    = base.substatus || '';
+      d.causaRaiz  = (base.causaRaiz || '').trim();
+      d.origemATD  = (base.origemATD || '').trim();
+      d.routeId    = base.routeId || '';
+      d.naoIniciada = (est === 'pendente');
+      d.cancelada   = (est === 'cancelado');
+      // Base é a fonte central: o status dela MANDA sobre o da SM.
+      if(est === 'finalizado' || est === 'cancelado'){
+        d.finalizada = true;                 // Base concluiu/cancelou → oculta
+      } else if(est === 'em andamento' || est === 'pendente'){
+        d.finalizada = false;                // Base diz que ainda está ativa/aguardando → MOSTRA,
+                                             // mesmo se a SM finalizou antes (divergência: corre p/ ajustar)
+      }
+      if(d.naoIniciada){
+        d.parado = false;                 // não saiu da origem → não é "parado em viagem"
+        d.risco = 'cinza';
+        d.riscoTexto = 'Aguardando início';
+      }
+    }
+
+    // Origem-destino: pela NOMENCLATURA (col F da aba) descobre as siglas/nomes;
+    // a sigla puxa o endereço do service center na aba Links.
+    const od = OD_INDEX[normKey(d.rota)];
+    if(od){
+      d.odOrigemSigla = od.oSigla || '';
+      d.odOrigemNome  = od.oNome || '';
+      d.odDestinoSigla = od.dSigla || '';
+      d.odDestinoNome  = od.dNome || '';
+      // guarda o nome amigável p/ exibição (popup do mapa)
+      d.origemDisplay  = d.odOrigemNome || d.origemDisplay || d.origem;
+      d.destinoDisplay = d.odDestinoNome || d.destinoDisplay || d.destino;
+      const lo = scInfo(od.oSigla), ld = scInfo(od.dSigla);
+      if(lo){
+        d.origemEndereco = lo.endereco || '';
+        d.origemMaps     = lo.maps || '';
+        const g = preciseGeo(od.oSigla, lo, d.origemGeo);  // localização precisa do service center
+        if(g.str){ d.origemGeo = g.str; if(g.coords) DIST.seed(g.str, g.coords); }
+      }
+      if(ld){
+        d.destinoEndereco = ld.endereco || '';
+        d.destinoMaps     = ld.maps || '';
+        const g = preciseGeo(od.dSigla, ld, d.destinoGeo);
+        if(g.str){ d.destinoGeo = g.str; if(g.coords) DIST.seed(g.str, g.coords); }
+      }
+    }
   });
 }
 
@@ -361,9 +462,10 @@ function renderEtaKpis(rows){
 function renderEtdKpis(rows){
   $('#etd-kpi-total').textContent = rows.length;
   const prio    = rows.filter(d => !d.naoPrioritaria);
-  const noprazo = prio.filter(d => d.risco === 'verde').length;
-  const risco   = prio.filter(d => d.risco === 'amarelo').length;
-  const atraso  = prio.filter(d => d.risco === 'vermelho').length;
+  const noprazo = prio.filter(d => d.risco === 'verde' && !d.naoIniciada).length;
+  const risco   = prio.filter(d => d.risco === 'amarelo' && !d.naoIniciada).length;
+  const atraso  = prio.filter(d => d.risco === 'vermelho' && !d.naoIniciada).length;
+  const aguard  = prio.filter(d => d.naoIniciada).length;  // Base: Pendente (não saiu)
   const parados = rows.filter(d => d.parado).length;       // coluna L (status SM)
   const posto   = rows.filter(d => d.postoFiscal).length;  // colunas U/V
   const pacotes = rows.reduce((s,d) => s + (d.pacotes || 0), 0);
@@ -380,6 +482,7 @@ function renderEtdKpis(rows){
     <div class="ca-row"><span class="ca-dot" style="background:var(--amber)"></span><div><b>${risco}</b> em risco (47–55)</div></div>
     <div class="ca-row"><span class="ca-dot" style="background:var(--red)"></span><div><b>${atraso}</b> possível atraso (&gt;55)</div></div>
     <div class="ca-row"><span class="ca-dot" style="background:var(--amber)"></span><div><b>${parados}</b> parados</div></div>
+    <div class="ca-row"><span class="ca-dot" style="background:var(--grey)"></span><div><b>${aguard}</b> aguardando início (não saíram)</div></div>
     <div class="ca-row"><span class="ca-dot" style="background:var(--grey)"></span><div><b>${naoPrio}</b> não prioritárias</div></div>`;
 }
 
@@ -435,16 +538,37 @@ function progressCell(d){
 
 // Tabelas: 3 prioritárias por faixa (Q) + 1 de não prioritárias (XPT/REV)
 function renderEtdTables(rows){
-  const prio = rows.filter(d => !d.naoPrioritaria);
-  const nao  = rows.filter(d =>  d.naoPrioritaria);
+  const prio   = rows.filter(d => !d.naoPrioritaria && !d.naoIniciada);
+  const aguard = rows.filter(d => !d.naoPrioritaria &&  d.naoIniciada);
+  const nao    = rows.filter(d =>  d.naoPrioritaria);
   const groups = { verde:[], amarelo:[], vermelho:[] };
   prio.forEach(d => { if(groups[d.risco]) groups[d.risco].push(d); });
   fillEtdTable('verde',    groups.verde);
   fillEtdTable('amarelo',  groups.amarelo);
   fillEtdTable('vermelho', groups.vermelho);
+  fillEtdAguardando(aguard);
   fillEtdNaoPrio(nao);
-  fillEtdPosto(rows.filter(d => d.postoFiscal));
+  fillEtdPosto(rows.filter(d => d.postoFiscal && !d.naoIniciada));
   $('#etd-count').textContent = rows.length;
+}
+function fillEtdAguardando(rows){
+  const c = $('#etd-cnt-aguard'); if(c) c.textContent = rows.length;
+  const tb = $('#etd-tbody-aguard'); if(!tb) return;
+  if(!rows.length){
+    tb.innerHTML = `<tr><td colspan="8"><div class="empty-state">Nenhuma rota aguardando início.</div></td></tr>`;
+    return;
+  }
+  tb.innerHTML = rows.map(d => `
+    <tr>
+      <td class="mono">${escapeHtml(d.protocolo)}</td>
+      <td class="mono">${escapeHtml(d.rota)}</td>
+      <td class="mono">${escapeHtml(d.placa)}</td>
+      <td>${escapeHtml(d.destino||'—')}</td>
+      <td>${fmtDateTime(d.etaDestino)||'—'}</td>
+      <td><span class="ocor-info">${escapeHtml(d.baseEstado||'Pendente')}</span></td>
+      <td>${escapeHtml(d.statusSM||'—')}</td>
+      <td>${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
+    </tr>`).join('');
 }
 
 // Tabela de Posto Fiscal — veículos com excepcionalidade a acompanhar (coluna U), km até o posto (coluna V)
@@ -702,53 +826,68 @@ function buildAlerts(){
   const A = [];
   (DASHBOARD_DATA.eta || []).forEach(d => {
     if(d.classificacao === 'vermelho')
-      A.push({ sev:3, cls:'b-vermelho', origem:'ETA', protocolo:d.protocolo, what:'Chegada atrasada', where:`${d.origem||'?'} → ${d.destino||'?'}`, detail:(d.atrasoMin!=null?d.atrasoMin+' min de atraso':'') });
+      A.push({ sev:3, cls:'b-vermelho', origem:'ETA', protocolo:d.protocolo, nomen:d.rota, what:'Chegada atrasada', where:`${d.origem||'?'} → ${d.destino||'?'}`, detail:(d.atrasoMin!=null?d.atrasoMin+' min de atraso':'') });
   });
   (DASHBOARD_DATA.etd || []).forEach(d => {
     if(d.finalizada || d.naoPrioritaria) return;
     if(d.risco === 'vermelho')
-      A.push({ sev:3, cls:'b-vermelho', origem:'ETD', protocolo:d.protocolo, what:'Possível atraso', where:d.destino||'?', detail:(d.kmMedio!=null?d.kmMedio+' km/h necessários':'') });
+      A.push({ sev:3, cls:'b-vermelho', origem:'ETD', protocolo:d.protocolo, nomen:d.rota, what:'Possível atraso', where:d.destino||'?', detail:(d.kmMedio!=null?d.kmMedio+' km/h necessários':'') });
     if(d.parado)
-      A.push({ sev:2, cls:'b-amarelo', origem:'ETD', protocolo:d.protocolo, what:'Veículo parado', where:d.destino||'?', detail:d.statusSM||'' });
+      A.push({ sev:2, cls:'b-amarelo', origem:'ETD', protocolo:d.protocolo, nomen:d.rota, what:'Veículo parado', where:d.destino||'?', detail:d.statusSM||'' });
     if(d.ocorrencia && d.risco === 'vermelho')
-      A.push({ sev:2, cls:'b-amarelo', origem:'ETD', protocolo:d.protocolo, what:'Ocorrência em sistema', where:d.destino||'?', detail:d.ocorrencia });
+      A.push({ sev:2, cls:'b-amarelo', origem:'ETD', protocolo:d.protocolo, nomen:d.rota, what:'Ocorrência em sistema', where:d.destino||'?', detail:d.ocorrencia });
   });
   (DASHBOARD_DATA.validacao || []).forEach(d => {
     if((d.divergencia||'').trim())
-      A.push({ sev:1, cls:'b-cinza', origem:'PORTAL', protocolo:d.protocolo, what:'Divergência no portal', where:d.servico||'?', detail:d.divergencia });
+      A.push({ sev:1, cls:'b-cinza', origem:'PORTAL', protocolo:d.protocolo, nomen:d.servico, what:'Divergência no portal', where:d.servico||'?', detail:d.divergencia });
   });
   A.sort((a,b) => b.sev - a.sev);
   return A;
 }
+// Nomenclatura (rota) de um protocolo, buscando em ETD e depois ETA
+function nomenFor(proto){
+  const p = String(proto).trim();
+  const etd = (DASHBOARD_DATA.etd || []).find(d => String(d.protocolo).trim() === p);
+  if(etd && etd.rota) return etd.rota;
+  const eta = (DASHBOARD_DATA.eta || []).find(d => String(d.protocolo).trim() === p);
+  if(eta && eta.rota) return eta.rota;
+  return '';
+}
+// Rótulo padrão de rota: protocolo + nomenclatura
+function rotaLabel(proto, nomen){
+  const n = (nomen != null && nomen !== '') ? nomen : nomenFor(proto);
+  return `<span class="rt-proto mono">${escapeHtml(proto)}</span>${n ? `<span class="rt-nomen">${escapeHtml(n)}</span>` : ''}`;
+}
 function renderAlertas(){
-  const tb = $('#alertas-tbody'); if(!tb) return;
   const A = buildAlerts();
-  const reds = A.filter(a => a.cls === 'b-vermelho').length;
-  const ambs = A.filter(a => a.cls === 'b-amarelo').length;
-  const greys = A.filter(a => a.cls === 'b-cinza').length;
-  $('#alertas-cnt').textContent = A.length;
+  const reds = A.filter(a => a.cls === 'b-vermelho');
+  const ambs = A.filter(a => a.cls === 'b-amarelo');
+  const greys = A.filter(a => a.cls === 'b-cinza');
   const hl = $('#alertas-headline');
   if(hl) hl.innerHTML = A.length ? `<span class="hl-strong">${A.length}</span> ite${A.length>1?'ns':'m'} exige${A.length>1?'m':''} ação agora` : 'Operação sob controle';
   const rib = $('#ribbon-alertas');
-  if(rib){ rib.classList.remove('state-verde','state-amarelo','state-vermelho'); rib.classList.add(reds?'state-vermelho':(ambs?'state-amarelo':'state-verde')); }
+  if(rib){ rib.classList.remove('state-verde','state-amarelo','state-vermelho'); rib.classList.add(reds.length?'state-vermelho':(ambs.length?'state-amarelo':'state-verde')); }
   const st = $('#alertas-stats');
-  if(st) st.innerHTML = statItem('var(--red)','Críticos',reds) + statItem('var(--amber)','Atenção',ambs) + statItem('var(--grey)','Portal',greys);
+  if(st) st.innerHTML = statItem('var(--red)','Críticos',reds.length) + statItem('var(--amber)','Atenção',ambs.length) + statItem('var(--grey)','Portal',greys.length);
   const nb = $('#badgeAlertas');
-  if(nb){ nb.textContent = A.length; nb.classList.remove('bad','warn'); if(reds) nb.classList.add('bad'); else if(ambs) nb.classList.add('warn'); }
-  if(!A.length){
-    tb.innerHTML = `<tr><td colspan="6"><div class="empty-state">Nenhum item exige ação no momento — operação sob controle.</div></td></tr>`;
-    return;
-  }
-  const gmap = { 'b-vermelho':'Crítico', 'b-amarelo':'Atenção', 'b-cinza':'Info' };
-  tb.innerHTML = A.map(a => `
-    <tr class="${a.cls==='b-vermelho'?'crit':''}">
-      <td><span class="badge ${a.cls}"><span class="badge-dot"></span>${gmap[a.cls]}</span></td>
-      <td><span class="resp-pill">${a.origem}</span></td>
-      <td class="mono">${escapeHtml(a.protocolo)}</td>
-      <td>${escapeHtml(a.what)}</td>
-      <td>${escapeHtml(a.where)}</td>
-      <td>${escapeHtml(a.detail)}</td>
-    </tr>`).join('');
+  if(nb){ nb.textContent = A.length; nb.classList.remove('bad','warn'); if(reds.length) nb.classList.add('bad'); else if(ambs.length) nb.classList.add('warn'); }
+  fillLane('crit', reds, 'crit');
+  fillLane('warn', ambs, 'warn');
+  fillLane('info', greys, 'info');
+}
+function fillLane(key, arr, cls){
+  const el = $('#lane-'+key), cnt = $('#lane-cnt-'+key);
+  if(cnt) cnt.textContent = arr.length;
+  if(!el) return;
+  if(!arr.length){ el.innerHTML = `<div class="lane-empty">Nada por aqui.</div>`; return; }
+  el.innerHTML = arr.map(a => `
+    <div class="alert-card ac-${cls}" data-proto="${escapeHtml(a.protocolo)}">
+      <div class="ac-top"><span class="ac-tag">${escapeHtml(a.origem)}</span><span class="ac-proto mono">${escapeHtml(a.protocolo)}</span></div>
+      ${a.nomen ? `<div class="ac-nomen">${escapeHtml(a.nomen)}</div>` : ''}
+      <div class="ac-what">${escapeHtml(a.what)}</div>
+      <div class="ac-where">${escapeHtml(a.where)}</div>
+      ${a.detail ? `<div class="ac-detail">${escapeHtml(a.detail)}</div>` : ''}
+    </div>`).join('');
 }
 
 /* ---- Histórico leve (localStorage) + tendência de pontualidade ---------- */
@@ -756,7 +895,7 @@ function snapshotPcts(){
   const eta = DASHBOARD_DATA.eta || [];
   const np = eta.filter(d => d.classificacao === 'verde').length, at = eta.filter(d => d.classificacao === 'vermelho').length;
   const etaPct = (np + at) ? Math.round(np / (np + at) * 100) : null;
-  const prio = (DASHBOARD_DATA.etd || []).filter(d => !d.naoPrioritaria && !d.finalizada);
+  const prio = (DASHBOARD_DATA.etd || []).filter(d => !d.naoPrioritaria && !d.finalizada && !d.naoIniciada);
   const v = prio.filter(d => d.risco === 'verde').length;
   const etdPct = prio.length ? Math.round(v / prio.length * 100) : null;
   return { etaPct, etdPct };
@@ -800,12 +939,159 @@ function renderTrend(){
      </div>`;
 }
 
+/* ---- Painel de Gestão (visão executiva) -------------------------------- */
+const SLA_META = 90;
+function slaStat(label, pct){
+  if(pct == null) return `<div class="os"><i style="background:var(--grey)"></i>${label} <b>—</b></div>`;
+  const col = pct>=SLA_META ? 'var(--green)' : (pct>=SLA_META-10 ? 'var(--amber)' : 'var(--red)');
+  return `<div class="os"><i style="background:${col}"></i>${label} <b style="color:${col}">${pct}%</b></div>`;
+}
+let gestaoDestSel = null;
+function destKey(s){ return (s||'—').split(',')[0].trim() || '—'; }
+// Ofensores: toda rota que exige ação, com o MOTIVO do atraso/risco
+function buildOfensores(){
+  const out = [];
+  (DASHBOARD_DATA.eta || []).forEach(d => {
+    if(d.classificacao === 'vermelho')
+      out.push({ proto:d.protocolo, nomen:d.rota, origem:d.origem, destino:d.destino, fonte:'ETA', sev:3, cls:'b-vermelho',
+        status:'Chegada atrasada', motivo:(d.atrasoMin!=null?`Atrasada ${d.atrasoMin} min na chegada à origem`:'Chegada atrasada na origem') });
+  });
+  (DASHBOARD_DATA.etd || []).forEach(d => {
+    if(d.finalizada || d.naoPrioritaria) return;
+    let row = null;
+    if(d.risco === 'vermelho')      row = { sev:3, cls:'b-vermelho', status:'Possível atraso', motivo:`Precisa manter ${d.kmMedio} km/h de média p/ chegar no prazo` };
+    else if(d.parado)               row = { sev:2, cls:'b-amarelo',  status:'Parado',          motivo:`Veículo parado — ${d.statusSM||'sem status na SM'}` };
+    else if(d.risco === 'amarelo')  row = { sev:1, cls:'b-amarelo',  status:'Em risco',        motivo:`Precisa manter ${d.kmMedio} km/h de média` };
+    if(!row) return;
+    if(d.causaRaiz) row.motivo += ` · Causa raiz: ${d.causaRaiz}`;
+    if(d.ocorrencia) row.motivo += ` · Ocorrência: ${d.ocorrencia}`;
+    if(d.velocidadeAtual != null) row.motivo += ` · indo a ${d.velocidadeAtual} km/h`;
+    out.push(Object.assign({ proto:d.protocolo, nomen:d.rota, origem:d.origem, destino:d.destino, fonte:'ETD' }, row));
+  });
+  out.sort((a,b) => b.sev - a.sev);
+  return out;
+}
+function gestaoJump(jump){
+  const [tab, val] = (jump||'').split('-');
+  if(tab === 'etd'){
+    filters.etd.banda = []; filters.etd.parados = [];
+    if(val === 'vermelho') filters.etd.banda = ['vermelho'];
+    else if(val === 'amarelo') filters.etd.banda = ['amarelo'];
+    else if(val === 'parados') filters.etd.parados = ['1'];
+    activateTab('etd'); refreshEtd(); syncFilterUI('etd');
+  } else if(tab === 'eta'){
+    const red = (DASHBOARD_DATA.eta || []).find(d => d.classificacao === 'vermelho');
+    filters.eta.classe = (val === 'vermelho' && red) ? [red.classificacaoTexto] : [];
+    activateTab('eta'); refreshEta(); syncFilterUI('eta');
+  }
+}
+function renderGestao(){
+  const etd = (DASHBOARD_DATA.etd || []).filter(d => !d.finalizada && !d.naoPrioritaria);
+  const eta = DASHBOARD_DATA.eta || [];
+  const { etaPct, etdPct } = snapshotPcts();
+  const hl = $('#gestao-headline');
+  if(hl) hl.innerHTML = (etdPct != null)
+    ? `Pontualidade ETD <span class="hl-strong">${etdPct}%</span> · meta ${SLA_META}%`
+    : 'Coletando leituras para o placar…';
+  const rib = $('#ribbon-gestao');
+  if(rib){ rib.classList.remove('state-verde','state-amarelo','state-vermelho');
+    const s = etdPct==null ? 'verde' : (etdPct>=SLA_META?'verde':(etdPct>=SLA_META-10?'amarelo':'vermelho'));
+    rib.classList.add('state-'+s); }
+  const st = $('#gestao-sla');
+  if(st) st.innerHTML = slaStat('ETD no prazo', etdPct) + slaStat('ETA no prazo', etaPct);
+  const parados = etd.filter(d=>d.parado).length;
+  const risco   = etd.filter(d=>d.risco==='amarelo').length;
+  const atraso  = etd.filter(d=>d.risco==='vermelho').length;
+  const etaAtr  = eta.filter(d=>d.classificacao==='vermelho').length;
+  const rs = $('#gestao-resumo');
+  if(rs) rs.innerHTML = [
+    ['var(--red)','Possível atraso · ETD', atraso, 'etd-vermelho'],
+    ['var(--amber)','Em risco · ETD', risco, 'etd-amarelo'],
+    ['var(--amber)','Veículos parados', parados, 'etd-parados'],
+    ['var(--red)','Chegada atrasada · ETA', etaAtr, 'eta-vermelho'],
+    ['var(--green)','Em viagem (prioritárias)', etd.length, 'etd-todos'],
+  ].map(([c,l,v,jump])=>`<div class="ca-row gx-jump" data-jump="${jump}"><span class="ca-dot" style="background:${c}"></span><div style="flex:1">${l}</div><b style="font-family:var(--font-num)">${v}</b><span class="gx-arrow">›</span></div>`).join('');
+  renderGestaoTrend();
+  renderGestaoDest();
+  renderOfensores();
+}
+function renderOfensores(){
+  const all = buildOfensores();
+  const sel = gestaoDestSel;
+  const rows = sel ? all.filter(o => destKey(o.destino) === sel) : all;
+  const hd = $('#gestao-ofen-head');
+  if(hd) hd.innerHTML = sel
+    ? `Ofensores em <b>${escapeHtml(sel)}</b> <span class="hint">${rows.length} rota(s)</span> <button class="mini-clear" id="ofen-clear">✕ limpar filtro</button>`
+    : `Principais ofensores <span class="hint">${rows.length} rota(s) · clique numa rota para abrir o detalhe</span>`;
+  const el = $('#gestao-ofen'); if(!el) return;
+  if(!rows.length){ el.innerHTML = `<div class="empty-state" style="padding:18px">Nenhuma rota em atraso${sel?' neste destino':''} agora. 👍</div>`; return; }
+  el.innerHTML = rows.map(o => `
+    <div class="ofen-row" data-proto="${escapeHtml(o.proto)}">
+      <span class="ofen-sev ${o.cls}"></span>
+      <div class="ofen-main">
+        <div class="ofen-id"><span class="mono">${escapeHtml(o.proto)}</span>${o.nomen?`<span class="ofen-nomen">${escapeHtml(o.nomen)}</span>`:''}<span class="ofen-fonte">${escapeHtml(o.fonte)}</span></div>
+        <div class="ofen-trajeto">${escapeHtml(o.origem||'?')} <span class="arr">→</span> ${escapeHtml(o.destino||'?')}</div>
+        <div class="ofen-motivo">${escapeHtml(o.motivo)}</div>
+      </div>
+      <span class="badge ${o.cls}"><span class="badge-dot"></span>${escapeHtml(o.status)}</span>
+    </div>`).join('');
+}
+function renderGestaoDest(){
+  const cv = $('#chart-gestao-dest'); if(!cv || typeof Chart==='undefined') return;
+  const ofen = buildOfensores();
+  const by = {};
+  ofen.forEach(o => { const k = destKey(o.destino); by[k] = (by[k]||0)+1; });
+  const pairs = Object.entries(by).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  destroyChart('gestaoDest');
+  charts.gestaoDest = new Chart(cv, {
+    type:'bar',
+    data:{ labels:pairs.map(p=>p[0]), datasets:[{ data:pairs.map(p=>p[1]),
+      backgroundColor:pairs.map(p=>p[0]===gestaoDestSel?PALETTE.red:'rgba(212,5,17,.55)'), borderRadius:4, borderWidth:0 }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      onClick:(evt, els) => { if(els && els.length){ const lbl = pairs[els[0].index][0]; gestaoDestSel = (gestaoDestSel===lbl?null:lbl); renderGestaoDest(); renderOfensores(); } },
+      onHover:(evt, els) => { if(evt.native && evt.native.target) evt.native.target.style.cursor = els.length?'pointer':'default'; },
+      scales:{ x:{ beginAtZero:true, ticks:{ precision:0 } } },
+      plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:(c)=>`${c.parsed.x} rota(s) · clique para filtrar` } } } }
+  });
+}
+function renderGestaoTrend(){
+  const cv = $('#chart-gestao-trend'); if(!cv || typeof Chart==='undefined') return;
+  let h = []; try { h = JSON.parse(localStorage.getItem('dhl_hist') || '[]'); } catch(e){}
+  const labels = h.map(x => { const d = new Date(x.t); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); });
+  destroyChart('gestaoTrend');
+  charts.gestaoTrend = new Chart(cv, {
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'ETD no prazo', data:h.map(x=>x.etd), borderColor:PALETTE.green, backgroundColor:'rgba(22,163,74,.08)', borderWidth:2, tension:.3, fill:true, spanGaps:true, pointRadius:2 },
+      { label:'ETA no prazo', data:h.map(x=>x.eta), borderColor:PALETTE.amber, backgroundColor:'rgba(0,0,0,0)', borderWidth:2, tension:.3, fill:false, spanGaps:true, pointRadius:2 },
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ y:{ min:0, max:100, ticks:{ callback:v=>v+'%' } } },
+      plugins:{ legend:{ position:'bottom', labels:{ padding:12, usePointStyle:true, pointStyle:'circle' } } } }
+  });
+}
+
 /* ----------------------------------------------------------------------- */
 /* Painel de detalhe da rota (clique numa linha)                            */
 /* ----------------------------------------------------------------------- */
 function dtField(label, value){
   if(value == null || value === '') return '';
   return `<div class="dt-row"><span class="dt-k">${label}</span><span class="dt-v">${escapeHtml(String(value))}</span></div>`;
+}
+// endereço vira link clicável quando for URL (ex.: link do Maps)
+function addrLink(end){
+  if(!end) return '';
+  return /^https?:\/\//i.test(end)
+    ? `<a href="${escapeHtml(end)}" target="_blank" rel="noopener" class="dt-link">Abrir no mapa ↗</a>`
+    : escapeHtml(end);
+}
+// linha de service center: Nome (SIGLA) + endereço escrito + link "Abrir no mapa"
+function scRow(label, nome, sigla, endereco, maps){
+  if(!nome && !sigla && !endereco && !maps) return '';
+  let v = `${escapeHtml(nome||'')}${sigla?` <span class="dt-sigla">${escapeHtml(sigla)}</span>`:''}`;
+  if(endereco) v += `<div class="dt-addr">${escapeHtml(endereco)}</div>`;
+  if(maps && /^https?:\/\//i.test(maps)) v += `<div>${addrLink(maps)}</div>`;
+  return `<div class="dt-row"><span class="dt-k">${label}</span><span class="dt-v">${v}</span></div>`;
 }
 function openDetail(proto){
   const eta = (DASHBOARD_DATA.eta || []).find(d => String(d.protocolo).trim() === proto);
@@ -814,7 +1100,9 @@ function openDetail(proto){
   const ocor = OCOR_INDEX[proto];
 
   let action = 'Sem ação pendente para este protocolo no momento.', acls = 'dt-ok';
-  if(etd && etd.risco === 'vermelho'){
+  if(etd && etd.naoIniciada){
+    action = `Rota ainda não iniciou (Estado na Base: ${etd.baseEstado||'Pendente'}). Não há atraso em trânsito — aguardando a saída da origem.`; acls = 'dt-ok';
+  } else if(etd && etd.risco === 'vermelho'){
     action = `Verifique este possível atraso: o veículo precisa manter ${etd.kmMedio} km/h de média para chegar no prazo. Acione a torre e o motorista.`; acls = 'dt-crit';
   } else if(eta && eta.classificacao === 'vermelho'){
     action = `Chegada atrasada${eta.atrasoMin!=null?` em ${eta.atrasoMin} min`:''}. Confirme o motivo na origem.`; acls = 'dt-crit';
@@ -848,6 +1136,17 @@ function openDetail(proto){
       + dtField('Pacotes', etd.pacotes!=null ? etd.pacotes.toLocaleString('pt-BR') : '')
       + (etd.postoFiscal ? dtField('Posto fiscal', etd.postoSituacao + (etd.postoKm!=null?` · ${etd.postoKm} km`:'')) : '')
       + (etd.ocorrencia ? dtField('Ocorrência', etd.ocorrencia) : '');
+    if(etd.baseEstado || etd.origemATD || etd.causaRaiz){
+      html += `<div class="dt-sec">Base · fonte central</div>`
+        + dtField('Estado', etd.baseEstado) + dtField('Substatus', etd.baseSub)
+        + dtField('Saída real da origem', etd.origemATD) + dtField('Causa raiz do incidente', etd.causaRaiz)
+        + dtField('Rostering ID', etd.protocolo) + dtField('Route ID', etd.routeId);
+    }
+    if(etd.odOrigemNome || etd.odDestinoNome || etd.origemEndereco || etd.destinoEndereco){
+      html += `<div class="dt-sec">Origem / Destino · service center</div>`
+        + scRow('Origem', etd.odOrigemNome, etd.odOrigemSigla, etd.origemEndereco, etd.origemMaps)
+        + scRow('Destino', etd.odDestinoNome, etd.odDestinoSigla, etd.destinoEndereco, etd.destinoMaps);
+    }
   }
   if(val){
     html += `<div class="dt-sec">Portal · auditoria</div>`
@@ -855,7 +1154,8 @@ function openDetail(proto){
   }
   if(!eta && !etd && !val) html += `<div class="empty-state">Sem dados detalhados para este protocolo.</div>`;
 
-  $('#dt-title').textContent = 'Protocolo ' + proto;
+  const _n = (etd && etd.rota) || (eta && eta.rota) || '';
+  $('#dt-title').textContent = 'Protocolo ' + proto + (_n ? ' · ' + _n : '');
   $('#dt-body').innerHTML = html;
   const ov = $('#detail-overlay');
   ov.style.display = 'flex'; document.body.style.overflow = 'hidden';
@@ -873,6 +1173,14 @@ function bindRowDetails(){
     if(wb){ toggleWatch(wb.dataset.proto); return; }
     const wi = e.target.closest('.watch-item');
     if(wi){ openDetail(wi.dataset.proto); return; }
+    const ac = e.target.closest('.alert-card');
+    if(ac){ openDetail(ac.dataset.proto); return; }
+    const oclr = e.target.closest('#ofen-clear');
+    if(oclr){ gestaoDestSel = null; renderGestaoDest(); renderOfensores(); return; }
+    const ofr = e.target.closest('.ofen-row');
+    if(ofr){ openDetail(ofr.dataset.proto); return; }
+    const gj = e.target.closest('.gx-jump');
+    if(gj){ gestaoJump(gj.dataset.jump); return; }
     const tr = e.target.closest('.table-wrap tbody tr');
     if(tr && !tr.querySelector('.empty-state')){
       const cell = tr.querySelector('.mono');
@@ -969,13 +1277,13 @@ function bindGlobalSearch(){
       const p = String(d.protocolo || '').trim();
       if(!p || seen.has(p)) return;
       const hay = `${p} ${d.placa||''} ${d.destino||''} ${d.origem||''} ${d.rota||''}`.toLowerCase();
-      if(hay.includes(q)){ seen.add(p); hits.push({ p, w: getWhere(d) }); }
+      if(hay.includes(q)){ seen.add(p); hits.push({ p, n: d.rota||'', w: getWhere(d) }); }
     });
     scan(DASHBOARD_DATA.etd, d => d.destino || d.placa || '');
     scan(DASHBOARD_DATA.eta, d => `${d.origem||''} → ${d.destino||''}`);
     const top = hits.slice(0, 8);
     box.innerHTML = top.length
-      ? top.map(h => `<div class="gs-item" data-proto="${escapeHtml(h.p)}"><span class="gs-p">${escapeHtml(h.p)}</span><span class="gs-w">${escapeHtml(h.w)}</span></div>`).join('')
+      ? top.map(h => `<div class="gs-item" data-proto="${escapeHtml(h.p)}"><span class="gs-p">${escapeHtml(h.p)}${h.n ? ` <span class="gs-n">${escapeHtml(h.n)}</span>` : ''}</span><span class="gs-w">${escapeHtml(h.w)}</span></div>`).join('')
       : `<div class="gs-empty">Nada encontrado para "${escapeHtml(q)}"</div>`;
     box.classList.add('open');
   };
@@ -1027,7 +1335,8 @@ function renderWatch(){
   }
   el.innerHTML = w.map(p => {
     const s = watchStatus(p);
-    return `<div class="watch-item" data-proto="${escapeHtml(p)}"><span class="mono">${escapeHtml(p)}</span><span class="badge ${s.cls}"><span class="badge-dot"></span>${escapeHtml(s.txt)}</span></div>`;
+    const n = nomenFor(p);
+    return `<div class="watch-item" data-proto="${escapeHtml(p)}"><span class="wi-id"><span class="mono">${escapeHtml(p)}</span>${n ? `<span class="wi-nomen">${escapeHtml(n)}</span>` : ''}</span><span class="badge ${s.cls}"><span class="badge-dot"></span>${escapeHtml(s.txt)}</span></div>`;
   }).join('');
 }
 
@@ -1066,16 +1375,19 @@ function renderAll(){
   refreshEtd();
   renderXptTable();
   renderValTable();
-  $('#badgeMapa').textContent = etdAtivos.filter(d => !d.naoPrioritaria).length;
+  $('#badgeMapa').textContent = etdAtivos.filter(d => !d.naoPrioritaria && !d.naoIniciada).length;
   // resumo útil no masthead (substitui o subtítulo decorativo)
   const etaAtras = DASHBOARD_DATA.eta.filter(d => d.classificacao === 'vermelho').length;
   const etdCrit  = etdAtivos.filter(d => !d.naoPrioritaria && (d.risco === 'vermelho' || d.parado)).length;
+  const emViagem = etdAtivos.filter(d => !d.naoIniciada).length;
+  const aguard   = etdAtivos.filter(d => d.naoIniciada).length;
   const mm = $('#masthead-meta');
-  if(mm) mm.textContent = `${etdAtivos.length} em viagem · ${etaAtras + etdCrit} exigindo atenção`;
+  if(mm) mm.textContent = `${emViagem} em viagem${aguard?` · ${aguard} aguardando início`:''} · ${etaAtras + etdCrit} exigindo atenção`;
   renderFleetMap();
   updateNavHealth();
   recordSnapshot();
   renderAlertas();
+  renderGestao();
   renderWatch();
   checkNewCriticals();
   renderTrend();
@@ -1129,14 +1441,15 @@ function bindTabs(){
       $$('.tab-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       const tab = btn.dataset.tab;
-      ['eta','etd','xpt','validacao','mapa','alertas'].forEach(t=>{
-        $('#view-'+t).style.display = (t===tab)?'block':'none';
+      ['eta','etd','xpt','validacao','mapa','alertas','gestao'].forEach(t=>{
+        const v = $('#view-'+t); if(v) v.style.display = (t===tab)?'block':'none';
       });
       // recalcula tamanho dos gráficos da aba aberta
       Object.values(charts).forEach(c=>c.resize());
       // o mapa precisa recalcular tamanho quando a aba fica visível
       if(tab==='mapa') renderFleetMap();
       if(tab==='alertas'){ renderAlertas(); renderTrend(); }
+      if(tab==='gestao'){ renderGestao(); Object.values(charts).forEach(c=>c.resize()); }
       saveView();
     });
   });
@@ -1310,6 +1623,35 @@ function sideLogoFail(el){
   else { el.dataset.tried = '1'; el.src = 'dhl.png'; }
 }
 
+/* ---- Modo telão (TV), impressão/PDF e modo compacto --------------------- */
+let _tvTimer = null, _tvIdx = 0;
+const TV_TABS = ['alertas','gestao','mapa','etd'];
+function startTv(){
+  document.body.classList.add('tv');
+  const el = document.documentElement;
+  if(el.requestFullscreen) el.requestFullscreen().catch(()=>{});
+  _tvIdx = 0; activateTab(TV_TABS[0]);
+  _tvTimer = setInterval(() => { _tvIdx = (_tvIdx + 1) % TV_TABS.length; activateTab(TV_TABS[_tvIdx]); }, 12000);
+}
+function stopTv(){
+  document.body.classList.remove('tv');
+  if(_tvTimer){ clearInterval(_tvTimer); _tvTimer = null; }
+  if(document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+}
+function applyCompact(on){
+  document.body.classList.toggle('compact', !!on);
+  const b = $('#compactBtn'); if(b) b.classList.toggle('on', !!on);
+  try { localStorage.setItem('dhl_compact', on ? '1' : '0'); } catch(e){}
+}
+function bindViewTools(){
+  const tv = $('#tvBtn'); if(tv) tv.addEventListener('click', () => { _tvTimer ? stopTv() : startTv(); });
+  const pr = $('#printBtn'); if(pr) pr.addEventListener('click', () => window.print());
+  const cp = $('#compactBtn'); if(cp) cp.addEventListener('click', () => applyCompact(!document.body.classList.contains('compact')));
+  document.addEventListener('fullscreenchange', () => { if(!document.fullscreenElement && _tvTimer) stopTv(); });
+  let saved = '0'; try { saved = localStorage.getItem('dhl_compact') || '0'; } catch(e){}
+  applyCompact(saved === '1');
+}
+
 function startClock(){
   const el = $('#side-clock');
   if(!el) return;
@@ -1333,6 +1675,7 @@ async function boot(){
   bindRowDetails();
   bindGlobalSearch();
   bindKeyboard();
+  bindViewTools();
   startHealthMonitor();
   const savedTab = restoreView();   // recupera filtros + aba ativa salvos
 
@@ -1409,7 +1752,7 @@ function renderFleetMap(){
   _map.invalidateSize();
   _fleetLayer.clearLayers();
   const rows = (DASHBOARD_DATA.etd || []).filter(d =>
-    !d.naoPrioritaria && !d.finalizada &&
+    !d.naoPrioritaria && !d.finalizada && !d.naoIniciada &&
     mapBands[d.risco] !== false &&
     (!mapFocus || d.protocolo === mapFocus));
   let plotted = 0, np = 0, ri = 0, at = 0;
@@ -1434,7 +1777,7 @@ function renderFleetMap(){
     }
     const pct = Math.round(frac * 100);
     L.circleMarker(pos, { radius: mapFocus===d.protocolo?9:7, color:'#fff', weight:1.5, fillColor:color, fillOpacity:.95 })
-      .bindPopup(`<b>${escapeHtml(d.protocolo)}</b><br>${escapeHtml(d.origemGeo||'?')} → ${escapeHtml(d.destinoGeo||'?')}<br>${pct}% concluído${d.kmFaltante!=null?' · '+d.kmFaltante+' km restantes':''}<br>${escapeHtml(d.riscoTexto||'')}${d.ocorrencia?'<br>⚠ '+escapeHtml(d.ocorrencia):''}<br><a href="#" onclick="mapIsolate('${escapeHtml(d.protocolo)}');return false;" style="color:#b8860b;font-weight:600">🔍 isolar no mapa</a>`)
+      .bindPopup(`<b>${escapeHtml(d.protocolo)}</b><br>${escapeHtml(d.origemDisplay||d.origemGeo||'?')} → ${escapeHtml(d.destinoDisplay||d.destinoGeo||'?')}<br>${pct}% concluído${d.kmFaltante!=null?' · '+d.kmFaltante+' km restantes':''}<br>${escapeHtml(d.riscoTexto||'')}${d.ocorrencia?'<br>⚠ '+escapeHtml(d.ocorrencia):''}<br><a href="#" onclick="mapIsolate('${escapeHtml(d.protocolo)}');return false;" style="color:#b8860b;font-weight:600">🔍 isolar no mapa</a>`)
       .addTo(_fleetLayer);
     plotted++;
     if(d.risco==='verde') np++; else if(d.risco==='amarelo') ri++; else if(d.risco==='vermelho') at++;
@@ -1753,6 +2096,56 @@ function mapOcorrenciaRow(row){
   return { protocolo: cell(row,'A'), ocorrencia: cell(row,'O') };
 }
 
+// Aba Base (fonte central). Chave = Rostering ID (col B). Colunas por POSIÇÃO:
+// A = Route ID · B = Rostering ID · C = Serviço · T = Origem ATD (saída real) ·
+// AM = Estado (Pendente/Em andamento/Finalizado/Cancelado) · AN = Substatus · AQ = Causa raiz do incidente
+function mapBaseRow(row){
+  return {
+    protocolo: cell(row,'B'),   // Rostering ID — chave de comunicação
+    routeId:   cell(row,'A'),   // Route ID — reserva
+    servico:   cell(row,'C'),
+    origemATD: cell(row,'T'),   // horário real que saiu da origem
+    estado:    cell(row,'AM'),  // Pendente = ainda não iniciou
+    substatus: cell(row,'AN'),
+    causaRaiz: cell(row,'AQ')
+  };
+}
+
+// Aba Links: A = cidade/nome da sigla · B = sigla · E = endereço escrito · G = link do Maps
+// Do link do Maps tentamos extrair as coordenadas exatas (@lat,lon), quando presentes.
+function mapLinkRow(row){
+  const maps = String(cell(row,'G'));
+  let lat = null, lon = null;
+  // 1) coluna H = "lat, lon" (preenchida pelo script de coordenadas) — prioridade
+  const hm = String(cell(row,'H')).match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+  if(hm){ lat = +hm[1]; lon = +hm[2]; }
+  else {
+    // 2) extrai do link do Maps: pin exato (!3d!4d) ou centro do mapa (@lat,lon)
+    const m = maps.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || maps.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if(m){ lat = +m[1]; lon = +m[2]; }
+  }
+  return {
+    sigla:    cell(row,'B'),
+    nome:     cell(row,'A'),
+    endereco: cell(row,'E'),   // endereço escrito (rua, número)
+    maps:     maps,            // link do Google Maps
+    lat,
+    lon
+  };
+}
+
+// Aba Origem-destino: liga a NOMENCLATURA (F) às siglas/nomes de origem e destino.
+// B = sigla origem · C = nome origem · D = sigla destino · E = nome destino · F = nomenclatura (chave)
+function mapOdRow(row){
+  return {
+    oSigla:     cell(row,'B'),
+    oNome:      cell(row,'C'),
+    dSigla:     cell(row,'D'),
+    dNome:      cell(row,'E'),
+    nomenclatura: cell(row,'F')
+  };
+}
+
 /* ---- Carregamento a partir do Sheets ------------------------------------ */
 const SHEET_MAP = {
   eta:        { key:'eta',        mapper: mapEtaRow },
@@ -1761,6 +2154,9 @@ const SHEET_MAP = {
   validacao:  { key:'validacao',  mapper: mapValRow },
   sm:         { key:'sm',         mapper: mapSmRow },
   ocorrencias:{ key:'ocorrencias',mapper: mapOcorrenciaRow },
+  base:       { key:'base',       mapper: mapBaseRow },
+  links:      { key:'links',      mapper: mapLinkRow },
+  od:         { key:'od',         mapper: mapOdRow },
   acompCpt:   { key:'acompCpt',   mapper: mapAcompRow }
 };
 
@@ -1845,6 +2241,16 @@ const DIST = {
     } catch(e){}
   },
   key(o,d){ return normKey(o) + '||' + normKey(d); },
+
+  // injeta coordenadas exatas (vindas do link do Maps) no cache, sem chamar Nominatim
+  seed(name, c){
+    if(!name || !c || c.lat == null || c.lon == null) return;
+    const nk = normKey(name);
+    const cur = this.geo[nk];
+    if(cur && cur !== 'FAIL' && Math.abs(cur.lat - c.lat) < 1e-6 && Math.abs(cur.lon - c.lon) < 1e-6) return;
+    this.geo[nk] = { lat: +c.lat, lon: +c.lon };
+    this.save();
+  },
 
   // km do par (número) ou null se ainda não resolvido
   get(o,d){

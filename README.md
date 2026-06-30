@@ -4,69 +4,77 @@ Torre de controle web da operação de tracking de logística, construída sobre
 
 🌐 **No ar:** https://caioalvs.github.io/dashdhl/ (GitHub Pages — `caioalvs/dashdhl`)
 
-Tema DHL: amarelo `#FFCC00` e vermelho `#D40511` (vermelho reservado a alertas) sobre fundo claro. Logo lockup **DHL × Mercado Livre**. Responsivo (no celular a navegação vira barra inferior).
+Tema DHL: amarelo `#FFCC00` e vermelho `#D40511` (vermelho reservado a alertas) sobre fundo claro. Logo lockup **DHL × Mercado Livre**. Responsivo (no celular a navegação vira barra inferior). Tem tema escuro NOC opcional.
 
 ## Arquivos
 
 - `index.html` — estrutura visual, tema, layout responsivo, sidebar/topo
-- `app.js` — toda a lógica: carregamento dos CSVs, parser, mapeadores, KPIs, gráficos (Chart.js), filtros multi-seleção, KPIs clicáveis, barra de progresso por distância
+- `app.js` — toda a lógica: carregamento dos CSVs, parser, mapeadores, KPIs, gráficos (Chart.js), mapa (Leaflet), filtros, busca, detalhe, etc.
 - `data.js` — dados de **exemplo** (usados só se `DATA_SOURCE = 'sample'`)
-- `abrir-painel.bat` + `server.py` — servidor local sem cache (para rodar na máquina; **não precisam ir pro GitHub**)
+- `abrir-painel.bat` + `server.py` — servidor local sem cache (não precisam ir pro GitHub)
+- `coordenadas-service-centers.gs.txt` — Apps Script de apoio que roda **na planilha** (não no site): preenche as coordenadas dos service centers na coluna H da aba Links
 
-## As 4 abas
+## As visões
 
-1. **ETA** — veículos chegando para carregar. No prazo / Atrasado / Aguardando, taxa de pontualidade e atraso médio.
-2. **ETD** — veículos em viagem para o destino. Faixas de risco, parados, pacotes, 3 tabelas por faixa + 1 de não prioritárias, e barra de progresso por rota.
-3. **XPT** — validação de checkpoint (bipagem CPT).
-4. **PORTAL** — auditoria base Meli × Portal × SM (divergências).
+1. **GESTÃO** — visão executiva: placar de SLA (pontualidade vs meta), tendência da pontualidade, atrasos por destino (clicável) e principais ofensores com o motivo do atraso.
+2. **ALERTAS** — central por prioridade (kanban Crítico / Atenção / Portal).
+3. **ETA** — veículos chegando para carregar. No prazo / Atrasado / Aguardando.
+4. **ETD** — veículos em viagem. Faixas de risco, parados, **aguardando início**, não prioritárias, posto fiscal, e barra de progresso por rota.
+5. **XPT** — validação de checkpoint (bipagem CPT).
+6. **PORTAL** — auditoria base Meli × Portal × SM (divergências).
+7. **MAPA** — frota sobre a estrada (rota real), posição por % concluído.
 
 ## Fonte de dados (modo produção)
 
-No topo do `app.js`, `DATA_SOURCE = 'sheets'` e o bloco `SHEET_CSV` aponta para **5 abas publicadas** como CSV (Arquivo → Compartilhar → Publicar na web → cada aba como CSV):
+No topo do `app.js`, `DATA_SOURCE = 'sheets'` e o bloco `SHEET_CSV` aponta para abas publicadas como CSV (Arquivo → Compartilhar → Publicar na web → cada aba como CSV):
 
-- `eta`, `etd`, `xpt`, `validacao` — as 4 abas do painel
-- `sm` — aba de apoio: liga **origem/destino (cidade + UF)** ao protocolo, usada no cálculo de distância
+- **abas do painel**: `eta`, `etd`, `xpt`, `validacao`
+- **apoio**: `sm` (origem/destino cidade+UF), `ocorrencias` (motivo em sistema), `base` (fonte central de status), `links` (sigla → nome/endereço/coordenada do service center), `od` (nomenclatura → siglas/nomes de origem e destino)
 
-O painel **se atualiza sozinho a cada 5 min** (`AUTO_REFRESH_MIN`). O botão **↻ Atualizar** força recarregamento. Falha em uma aba não derruba as outras (o erro aparece no cabeçalho). Para rodar local, **não abra por duplo clique** (o `file://` bloqueia o fetch) — use o `abrir-painel.bat`.
+O painel **se atualiza sozinho a cada 5 min** (`AUTO_REFRESH_MIN`). O botão **↻ Atualizar** força recarregamento. Falha em uma aba não derruba as outras. Pra rodar local, **não abra por duplo clique** (o `file://` bloqueia o fetch) — use o `abrir-painel.bat`.
 
 ## Regras de negócio (definidas pela operação)
 
-Várias colunas são lidas por **posição** (letra da coluna), via `cell(row,'X')`:
+Colunas lidas por **posição** (letra), via `cell(row,'X')`:
 
-**ETA**
-- `F` = horário máximo de chegada · `G` = horário real da chegada
-- Resultado: **G < F → No prazo** · **G ≥ F → Atrasado** (guarda os minutos de atraso) · **G vazio → Aguardando**
-- `K` e `L` = status da rota (exibidos na tabela)
+**ETA** — `F` horário máx. de chegada · `G` horário real → **G < F No prazo**, **G ≥ F Atrasado**, **G vazio Aguardando** · `U` status da viagem.
 
-**ETD**
-- `A` = protocolo · `B` = nomenclatura · `C` = placa · `F` = horário de destino
-- `L` = status da SM → usado para **Parados** (status contém "parado")
-- `Q` = km/h médio necessário → faixa: **≤55 No prazo** · **56–65 Risco** · **>65 Possível atraso**
-- `R` = km percorridos na última hora · `S` = velocidade atual
-- Rotas **XPT / REV / reversa** vão para a tabela "Não prioritárias"
-- **Origem/Destino reais** vêm da aba **SM** (cidade + UF) ligada pelo protocolo — a coluna `O` do ETD é o **sinal de GPS**, não o destino
+**ETD** — `A` protocolo (= Rostering ID) · `B` nomenclatura · `C` placa · `F` horário destino · `L` status da SM · `Q` km/h médio necessário (≤46 No prazo · 47–55 Risco · >55 Possível atraso) · `R` km última hora · `S` velocidade · `U`/`V` posto fiscal. XPT/REV/reversa → "Não prioritárias".
 
-**Aba SM** (apoio): `F` = protocolo · `O`/`P` = cidade/UF de origem · `T`/`U` = cidade/UF de destino
+**Base** (fonte central, liga por **Rostering ID**) — `AM` Estado (`Pendente`/`Em andamento`/`Finalizado`/`Cancelado`) · `AN` Substatus · `T` saída real da origem · `AQ` causa raiz. **A Base manda sobre a SM**: `Pendente` → "Aguardando início" (não vira parado/risco); `Finalizado`/`Cancelado` → oculta; `Em andamento` → continua visível mesmo se a SM finalizou antes (divergência a corrigir).
 
-### Barra de progresso (% concluída)
+**Origem-destino** (liga por **nomenclatura**, col F) — `B`/`C` sigla/nome origem · `D`/`E` sigla/nome destino.
 
-`% = (distância total origem→destino − km faltante) / distância total`. A distância total é obtida por **geocodificação gratuita**: Nominatim (cidade+UF → coordenadas) + OSRM (rota rodoviária), com **cache em `localStorage`** (cada par resolve uma vez). A barra é colorida pela faixa de risco (verde/amarelo/vermelho). Enquanto resolve aparece "…"; se a cidade não geocodificar, "s/ rota".
+**Links** (liga por **sigla**) — `A` nome · `B` sigla · `E` endereço · `G` link Maps · `H` coordenada `lat, lon`.
+
+**SM** (apoio) — `F` protocolo · `O`/`P` cidade/UF origem · `T`/`U` cidade/UF destino.
+
+### Mapa e barra de progresso (% concluída)
+
+`% = (distância total origem→destino − km faltante) / distância total`. A linha é a **rota rodoviária real** (OSRM) e o veículo fica **sobre a estrada**. A localização de origem/destino usa a **coordenada exata do service center**: primeiro a coluna H da Links (`lat, lon`), senão o pin do link do Maps (`!3d!4d` ou `@`), senão geocodifica o endereço, senão cidade+UF. Cache em `localStorage`.
+
+### Coordenadas dos service centers (coluna H)
+
+Os endereços escritos costumam ser marcos de rodovia que o geocodificador não acha, então a coordenada exata vem da **coluna H** da aba Links. O script `coordenadas-service-centers.gs.txt` preenche essa coluna automaticamente (resolvendo os links curtos do Maps) — roda na planilha em Extensões → Apps Script, é re-rodável e pode ter gatilho diário. Casos que o script não resolve dá pra preencher na mão: clique direito no Maps → copiar coordenadas → colar em H no formato `-23.5112776, -46.8232641` (ponto no decimal).
 
 ## Interatividade
 
-- **Filtros multi-seleção** (caixas de seleção; vazio = todos) em ETA e ETD.
-- **KPIs clicáveis**: clicar num card filtra as tabelas (ex.: "Atrasados", "Risco", "Parados"); o card "Total" limpa. O card ativo mostra "✓ filtrando".
+- **Filtros multi-seleção** e **cabeçalhos ordenáveis** (A-Z/Z-A) em ETA e ETD.
+- **KPIs clicáveis**: clicar num card filtra as tabelas; o card ativo mostra "✓ filtrando".
+- **Busca global** (protocolo/placa/rota/destino), **observar protocolo** (fixar), **detalhe da rota** (drawer com ação recomendada, dados da Base e service center de origem/destino com endereço + "Abrir no mapa").
+- **Modo telão** (tela cheia rotativa pra TV), **Imprimir/PDF**, **modo compacto** de tabela.
+- Sempre que aparece uma rota: **protocolo + nomenclatura** juntos.
 
 ## Publicar atualizações
 
-O site é servido pelo GitHub (repo `caioalvs/dashdhl`), não pela pasta local:
+Site servido pelo GitHub (`caioalvs/dashdhl`), não pela pasta local:
 
 - **Dados** (planilha): atualizam sozinhos, sem republicar.
-- **Código**: depois de mudar arquivos, faça **Commit → Push** (GitHub Desktop ou `git add -A && git commit -m "..." && git push`). O Pages republica sozinho em ~1–2 min.
+- **Código**: depois de mudar arquivos, **Commit → Push** (GitHub Desktop ou git). O Pages republica em ~1–2 min.
 
 ## Notas técnicas
 
-- Parser CSV próprio lida com aspas/vírgulas/quebras de linha dentro de células; datas BR (`18/06/2026 04:00`) e números BR (`2.895`, `1.234,5`).
-- Mapeadores também aceitam cabeçalhos por nome (tolerante a acento/maiúscula) como fallback — para ajustar, é só **adicionar** o nome do cabeçalho na lista `pick(...)` da coluna.
-- Validado com Node: `node --check app.js` (sintaxe) + testes de lógica das funções reais (ETA F/G, faixas Q, parados/L, SM, filtros) e verificação de que todo `$('#id')` do `app.js` existe no `index.html`.
-- A aba **ACOMP CPT** segue como modelo (`acompCpt` com URL vazia) — é só publicar e preencher quando quiser.
+- Parser CSV próprio (aspas/vírgulas/quebras dentro da célula); datas/números BR.
+- Mapeadores aceitam coluna por **letra** (`cell`) e por **nome** (fallback `pick`, tolerante a acento/maiúscula).
+- Sem testes automatizados nem bundler: valida-se com `node --check app.js` + funções isoladas no Node + conferência visual.
+- A aba **ACOMP CPT** segue como modelo (URL vazia) — é só publicar e preencher quando quiser.
