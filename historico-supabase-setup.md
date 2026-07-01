@@ -23,8 +23,9 @@ drop table if exists viagens_historico;
 -- Chave = protocolo + trecho: uma viagem multi-trecho tem VÁRIAS linhas
 -- (uma por trecho), todas com o mesmo protocolo. A chave separa cada trecho.
 create table viagens_historico (
-  chave             text primary key,   -- protocolo|trecho (único por trecho)
-  rostering_id      text,               -- protocolo
+  chave             text primary key,   -- (protocolo, ou 'R'+route_id se sem protocolo) | trecho
+  rostering_id      text,               -- protocolo (pode vir vazio/"0")
+  route_id          text,               -- Route ID (chave reserva quando não há protocolo)
   trecho            text,               -- ex.: BRBA02-BRBA01
   data              date,               -- Data Serviço
   servico           text,               -- nomenclatura
@@ -33,9 +34,10 @@ create table viagens_historico (
   saida_programada  text,               -- Origem ETD (deveria sair)
   saida_real        text,               -- Origem ATD (saiu de verdade)
   chegada           text,               -- Destino ATA (chegou)
-  estado            text,               -- Finalizado
+  estado            text,               -- Finalizado / Cancelado
   resultado         text,               -- No prazo / Atrasado
   pacotes           integer,
+  motivo_cancelamento text,             -- motivo (Base col AP) — ex.: Infrutífera
   causa_raiz        text,
   inserido_em       timestamptz default now()
 );

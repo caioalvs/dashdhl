@@ -167,6 +167,26 @@
   .rel-per-btn.active { background:var(--yellow); border-color:var(--yellow); color:#5d4a00; }
   .rel-2col { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px; align-items:start; }
   @media (max-width:900px){ .rel-2col { grid-template-columns:1fr; } }
+  #rel-custom { align-items:center; gap:8px; flex-wrap:wrap; }
+  #rel-custom label { font-size:12px; color:var(--text-dim); display:flex; align-items:center; gap:5px; }
+  #rel-custom input[type=date] { border:1px solid var(--border); border-radius:8px; padding:6px 8px; font-family:inherit; font-size:12px; background:var(--bg-panel); color:var(--text); }
+  #rel-custom-aplicar { background:var(--yellow); border:none; color:#5d4a00; font-weight:700; font-size:12px; padding:7px 14px; border-radius:8px; cursor:pointer; }
+  .rel-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .rel-chip { background:var(--bg-panel-2); border:1px solid var(--border); color:var(--text-dim); font-size:11.5px; font-weight:600; padding:5px 11px; border-radius:100px; cursor:pointer; transition:border-color .12s ease, color .12s ease; }
+  .rel-chip:hover { border-color:var(--yellow-dim); color:var(--text); }
+  .rel-chip.active { background:var(--yellow-soft); border-color:var(--yellow-dim); color:#7a5d00; }
+  .rel-chip b { font-family:var(--font-num); }
+  .rel-motivo-row { cursor:pointer; border-radius:8px; padding:8px 10px; transition:background .12s ease; }
+  .rel-motivo-row:hover { background:var(--bg-panel-2); }
+  .rel-back { background:none; border:none; color:var(--ml-blue,#3483fa); font-weight:700; font-size:13px; cursor:pointer; padding:0; }
+  .rel-back:hover { text-decoration:underline; }
+  tr.rel-click { cursor:pointer; }
+  tr.rel-click:hover { background:var(--yellow-soft); }
+  #rel-kpis .kpi-card.clickable { cursor:pointer; }
+  .rel-kpi-go { position:absolute; bottom:10px; right:12px; font-size:10px; font-weight:700; color:var(--text-dim); opacity:0; transition:opacity .12s ease; }
+  #rel-kpis .kpi-card.clickable:hover .rel-kpi-go { opacity:1; color:var(--yellow-dim); }
+  @keyframes relFlash { 0%{ box-shadow:0 0 0 0 var(--yellow); } 100%{ box-shadow:0 0 0 5px rgba(255,204,0,0); } }
+  .rel-flash { animation: relFlash 1s ease; }
   .chart-box-sm { position:relative; height: 180px; }
   .chart-aside { display:flex; flex-direction:column; justify-content:center; gap:10px; color:var(--text-dim); font-size:12.5px; }
   .chart-aside .ca-row { display:flex; align-items:center; gap:10px; }
@@ -224,6 +244,9 @@
   .doc-badge { display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:100px; white-space:nowrap; }
   .doc-ok { background:rgba(22,163,74,.12); color:#15803d; }
   .doc-pend { background:var(--bg-panel-2); color:var(--text-dim); border:1px solid var(--border); }
+  .id-tag { font-size:9.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; padding:1px 6px; border-radius:5px; white-space:nowrap; }
+  .id-proto { background:var(--bg-panel-2); color:var(--text-dim); border:1px solid var(--border); }
+  .id-travel { background:rgba(52,131,250,.12); color:var(--ml-blue,#3483fa); border:1px solid rgba(52,131,250,.3); }
   .ocor-empty { color: var(--text-dim); }
   /* ordenação por cabeçalho */
   .table-wrap thead th.sortable { cursor:pointer; user-select:none; transition: color .12s ease; }
@@ -259,6 +282,16 @@
   .dt-addr { font-size:11.5px; color:var(--text-dim); margin-top:3px; line-height:1.3; font-weight:400; }
   .dt-link { color:var(--ml-blue,#3483fa); font-weight:600; text-decoration:none; }
   .dt-link:hover { text-decoration:underline; }
+  .acoes-list { display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+  .acao-item { display:flex; gap:9px; align-items:flex-start; font-size:12.5px; color:var(--text); background:var(--bg-panel-2); border:1px solid var(--border); border-radius:9px; padding:8px 10px; }
+  .acao-ic { flex:0 0 auto; }
+  .acao-when { font-size:10.5px; color:var(--text-dim); margin-top:2px; }
+  .acoes-form { display:flex; flex-direction:column; gap:8px; }
+  .acao-row { display:flex; gap:8px; }
+  .acao-inp { flex:1; border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-family:inherit; font-size:12.5px; background:var(--bg-panel); color:var(--text); }
+  .acao-btn { background:var(--yellow); border:none; color:#5d4a00; font-weight:700; font-size:12px; padding:7px 12px; border-radius:8px; cursor:pointer; white-space:nowrap; }
+  .acao-btn:hover { filter:brightness(.97); }
+  .acao-btn:disabled { opacity:.5; cursor:default; }
   /* busca global */
   .gsearch { position:relative; }
   .gsearch input { width:230px; background:var(--bg-panel-2); border:1px solid var(--border); border-radius:100px; padding:8px 14px; font-size:13px; color:var(--text); outline:none; transition:border-color .15s ease, background .15s ease; }
@@ -651,7 +684,7 @@
           <div class="table-scroll">
             <table>
               <thead><tr>
-                <th>Protocolo</th><th>Rota</th><th>Motorista</th><th>Placa</th>
+                <th>Identificação</th><th>Rota</th><th>Motorista</th><th>Placa</th>
                 <th>Horário máx. (F)</th><th>Chegada real (G)</th><th>Resultado</th>
                 <th>Status (K)</th><th>Status (L)</th><th>Status viagem (U)</th><th>Ocorrência / Motivo</th>
               </tr></thead>
@@ -735,21 +768,21 @@
         <div class="table-wrap">
           <div class="table-head-bar th-verde"><span class="dot"></span> No prazo — km/h médio necessário até 46<span class="cnt"><b id="etd-cnt-verde">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Protocolo</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h méd. (Q)</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h méd. (Q)</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
             <tbody id="etd-tbody-verde"></tbody>
           </table></div>
         </div>
         <div class="table-wrap">
           <div class="table-head-bar th-amarelo"><span class="dot"></span> Risco — km/h médio necessário entre 47 e 55<span class="cnt"><b id="etd-cnt-amarelo">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Protocolo</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h méd. (Q)</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h méd. (Q)</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
             <tbody id="etd-tbody-amarelo"></tbody>
           </table></div>
         </div>
         <div class="table-wrap">
           <div class="table-head-bar th-vermelho"><span class="dot"></span> Possível atraso — km/h médio necessário acima de 55<span class="cnt"><b id="etd-cnt-vermelho">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Protocolo</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h méd. (Q)</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h méd. (Q)</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
             <tbody id="etd-tbody-vermelho"></tbody>
           </table></div>
         </div>
@@ -758,16 +791,25 @@
         <div class="table-wrap">
           <div class="table-head-bar th-grey"><span class="dot"></span> Aguardando início — ainda não saíram da origem (Base: Pendente) <span class="cnt"><b id="etd-cnt-aguard">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Protocolo</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Estado (Base)</th><th>Status SM (L)</th><th>Pacotes</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Estado (Base)</th><th>Status SM (L)</th><th>Pacotes</th></tr></thead>
             <tbody id="etd-tbody-aguard"></tbody>
           </table></div>
         </div>
 
-        <!-- rotas não prioritárias (XPT / REV / reversa) -->
+        <!-- XPT — operação à parte -->
         <div class="table-wrap">
-          <div class="table-head-bar th-grey"><span class="dot"></span> Não prioritárias — XPT / reversas (rastreio sem prioridade) <span class="cnt"><b id="etd-cnt-nao">0</b> rotas</span></div>
+          <div class="table-head-bar" style="border-left:3px solid var(--ml-blue)"><span class="dot" style="background:var(--ml-blue)"></span> XPT — operação à parte (acompanhamento separado) <span class="cnt"><b id="etd-cnt-xpt">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Protocolo</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Km Faltante</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Km Faltante</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
+            <tbody id="etd-tbody-xpt"></tbody>
+          </table></div>
+        </div>
+
+        <!-- rotas não prioritárias (REV / reversa) -->
+        <div class="table-wrap">
+          <div class="table-head-bar th-grey"><span class="dot"></span> Não prioritárias — reversas (rastreio sem prioridade) <span class="cnt"><b id="etd-cnt-nao">0</b> rotas</span></div>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Km Faltante</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
             <tbody id="etd-tbody-nao"></tbody>
           </table></div>
         </div>
@@ -776,7 +818,7 @@
         <div class="table-wrap">
           <div class="table-head-bar"><span class="dot" style="background:var(--ml-blue)"></span> Posto fiscal — veículos com excepcionalidade a acompanhar <span class="cnt"><b id="etd-cnt-posto">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Protocolo</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h méd. (Q)</th><th>Situação (U)</th><th>Km até o posto (V)</th><th>Status SM (L)</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h méd. (Q)</th><th>Situação (U)</th><th>Km até o posto (V)</th><th>Status SM (L)</th></tr></thead>
             <tbody id="etd-tbody-posto"></tbody>
           </table></div>
         </div>
@@ -785,13 +827,17 @@
       <!-- ===================== XPT ===================== -->
       <section id="view-xpt" style="display:none;">
         <div class="kpi-row">
-          <div class="kpi-card k-total"><div class="kpi-label">Total checkpoints</div><div class="kpi-value tabular" id="xpt-kpi-total">0</div><div class="kpi-sub">Validações de bipagem CPT</div></div>
-          <div class="kpi-card k-green"><div class="kpi-label">Finalizados</div><div class="kpi-value tabular" id="xpt-kpi-fin">0</div><div class="kpi-sub">Checklist enviado ao portal</div></div>
-          <div class="kpi-card k-amber"><div class="kpi-label">Em andamento</div><div class="kpi-value tabular" id="xpt-kpi-and">0</div><div class="kpi-sub">Aguardando finalização</div></div>
-          <div class="kpi-card k-red"><div class="kpi-label">Cancelados</div><div class="kpi-value tabular" id="xpt-kpi-can">0</div><div class="kpi-sub">Sem HU/pacotes registrados</div></div>
+          <div class="kpi-card k-total"><div class="kpi-label">Total checkpoints</div><div class="kpi-value tabular" id="xpt-kpi-total">0</div><div class="kpi-sub">Acompanhamento de bipagem CPT</div></div>
+          <div class="kpi-card k-green"><div class="kpi-label">Bipagem no prazo</div><div class="kpi-value tabular" id="xpt-kpi-bip">0</div><div class="kpi-sub">bipou até o CPT previsto</div></div>
+          <div class="kpi-card k-amber"><div class="kpi-label">Finalizados</div><div class="kpi-value tabular" id="xpt-kpi-fin">0</div><div class="kpi-sub">checklist concluído</div></div>
+          <div class="kpi-card k-red"><div class="kpi-label">DOC pendente</div><div class="kpi-value tabular" id="xpt-kpi-doc">0</div><div class="kpi-sub">documento ainda não enviado</div></div>
+        </div>
+        <div class="filter-bar">
+          <input type="text" class="search" id="f-xpt-search" placeholder="Buscar protocolo, placa, motorista, rota...">
+          <div class="result-count"><b id="xpt-count">0</b> checkpoints</div>
         </div>
         <div class="table-wrap"><div class="table-scroll"><table>
-          <thead><tr><th>Protocolo</th><th>Rota</th><th>Motorista</th><th>Placa</th><th>Veículo</th><th>Status</th><th>HUs</th><th>Pacotes</th><th>Doc</th><th>Observação</th></tr></thead>
+          <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Motorista</th><th>CPT previsto (F)</th><th>Bipagem CPT (G)</th><th>Status</th><th>Pacotes</th><th>DOC</th><th>Performance</th><th>Pontuação</th></tr></thead>
           <tbody id="xpt-tbody"></tbody>
         </table></div></div>
       </section>
@@ -804,7 +850,7 @@
           <div class="kpi-card k-red"><div class="kpi-label">Divergências</div><div class="kpi-value tabular" id="val-kpi-div">0</div><div class="kpi-sub">Requer ajuste manual</div></div>
         </div>
         <div class="table-wrap"><div class="table-scroll"><table>
-          <thead><tr><th>Protocolo</th><th>Serviço</th><th>Placas</th><th>Saída prog. (origem)</th><th>Status Portal (H)</th><th>Divergência (O)</th></tr></thead>
+          <thead><tr><th>Identificação</th><th>Serviço</th><th>Placas</th><th>Saída prog. (origem)</th><th>Status Portal (H)</th><th>Divergência (O)</th></tr></thead>
           <tbody id="val-tbody"></tbody>
         </table></div></div>
       </section>
@@ -855,6 +901,13 @@
           <h3>Em observação <span class="hint"><b id="watch-cnt">0</b> protocolos fixados</span></h3>
           <div id="watch-list" class="watch-wrap"></div>
         </div>
+        <div class="panel" style="margin-bottom:18px">
+          <h3>⚠ Atrasos sem ocorrência — risco <span class="hint"><b id="alertas-risco-cnt">0</b> · finalizadas atrasadas sem justificativa (últimos 3 dias) · clique pra ver o detalhe</span></h3>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Tipo</th><th>Estado</th><th>Status</th><th>Ocorrência</th></tr></thead>
+            <tbody id="alertas-risco-tbody"></tbody>
+          </table></div>
+        </div>
         <div class="alert-board">
           <div class="alert-lane lane-crit">
             <div class="alert-lane-head"><span class="dot"></span> Crítico <span class="lane-cnt" id="lane-cnt-crit">0</span></div>
@@ -880,7 +933,7 @@
           <div class="ops-stats" id="gestao-sla"></div>
         </div>
         <div class="panel" style="margin-bottom:18px">
-          <h3>Tendência da pontualidade <span class="hint">% no prazo a cada leitura · atualiza sozinho a cada 5 min</span></h3>
+          <h3>Tendência da pontualidade <span class="hint">% no prazo por dia · últimos 14 dias (histórico)</span></h3>
           <div style="height:240px;position:relative"><canvas id="chart-gestao-trend"></canvas></div>
         </div>
         <div class="chart-row-small">
@@ -914,32 +967,64 @@
           <button class="rel-per-btn" data-per="tri">Trimestre</button>
           <button class="rel-per-btn" data-per="sem">Semestre</button>
           <button class="rel-per-btn" data-per="ano">Ano</button>
+          <button class="rel-per-btn" id="rel-custom-btn">📅 Período…</button>
+          <div id="rel-custom" style="display:none">
+            <label>de <input type="date" id="rel-custom-ini"></label>
+            <label>até <input type="date" id="rel-custom-fim"></label>
+            <button id="rel-custom-aplicar">Aplicar</button>
+          </div>
         </div>
         <div class="kpi-row" id="rel-kpis"></div>
         <div id="rel-wrap">
           <div class="rel-2col">
-            <div class="panel">
-              <h3>Pontualidade <span class="hint">no prazo × atrasado</span></h3>
+            <div class="panel" id="rel-pont-panel">
+              <h3>Pontualidade <span class="hint">no prazo × atrasado · clique em "Atrasado"</span></h3>
               <div style="height:230px;position:relative"><canvas id="chart-rel-sla"></canvas></div>
             </div>
             <div class="panel">
+              <h3>Tendência de pontualidade <span class="hint">% no prazo por dia</span></h3>
+              <div style="height:230px;position:relative"><canvas id="chart-rel-trend"></canvas></div>
+            </div>
+          </div>
+          <div class="rel-2col">
+            <div class="panel">
               <h3>Volumetria de saída por turno <span class="hint">saída programada</span></h3>
               <div style="height:230px;position:relative"><canvas id="chart-rel-turno"></canvas></div>
+            </div>
+            <div class="panel">
+              <h3>Pontualidade por tipo de rota <span class="hint">% no prazo</span></h3>
+              <div style="height:230px;position:relative"><canvas id="chart-rel-tipo"></canvas></div>
             </div>
           </div>
           <div class="panel" style="margin-bottom:18px">
             <h3>Viagens finalizadas por faixa de horário <span class="hint">hora da chegada</span></h3>
             <div style="height:240px;position:relative"><canvas id="chart-rel-hora"></canvas></div>
           </div>
-          <div class="rel-2col">
-            <div class="panel">
-              <h3>Principais causas de atraso / ocorrência</h3>
-              <div id="rel-causas" class="chart-aside"></div>
+          <div class="panel" id="rel-atr-panel" style="margin-bottom:18px">
+            <h3>Viagens atrasadas <span class="hint"><b id="rel-atr-cnt">0</b> · justificativa = ocorrência em sistema · clique numa linha</span></h3>
+            <div class="rel-chips" id="rel-atr-chips"></div>
+            <div class="table-scroll short"><table>
+              <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Tipo</th><th>Destino</th><th>Ocorrência / justificativa</th></tr></thead>
+              <tbody id="rel-atr-tbody"></tbody>
+            </table></div>
+          </div>
+          <div class="panel" id="rel-canc-panel" style="margin-bottom:18px">
+            <h3 id="rel-canc-head">Cancelamentos por motivo</h3>
+            <div id="rel-motivos" class="chart-aside"></div>
+            <div id="rel-canc-tablewrap" style="display:none">
+              <div class="table-scroll short"><table>
+                <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Tipo</th><th>Destino</th></tr></thead>
+                <tbody id="rel-canc-tbody"></tbody>
+              </table></div>
             </div>
-            <div class="panel">
-              <h3>Destinos com mais viagens</h3>
-              <div id="rel-destinos" class="chart-aside"></div>
-            </div>
+            <span id="rel-canc-cnt" style="display:none"></span>
+          </div>
+          <div class="panel">
+            <h3>Destinos — volume e pontualidade <span class="hint">top 10</span></h3>
+            <div class="table-scroll short"><table>
+              <thead><tr><th>Destino</th><th>Viagens</th><th>Atrasadas</th><th>Pontualidade</th></tr></thead>
+              <tbody id="rel-dest-tbody"></tbody>
+            </table></div>
           </div>
         </div>
       </section>

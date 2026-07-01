@@ -21,9 +21,9 @@ var NOME_ABA_BASE = 'Base';
 
 // Colunas da Base (1-indexado)
 var C = {
-  rostering: 2, servico: 3, data: 4, trecho: 14, origem: 15,
+  routeId: 1, rostering: 2, servico: 3, data: 4, trecho: 14, origem: 15,
   origemETD: 19, origemATD: 20, destino: 24, destinoATA: 26,
-  estado: 39, substatus: 40, pacotes: 37, causaRaiz: 43
+  estado: 39, substatus: 40, pacotes: 37, motivoCancel: 42, causaRaiz: 43
 };
 
 function enviarHistoricoSupabase() {
@@ -37,14 +37,20 @@ function enviarHistoricoSupabase() {
   var mapa = {};
   for (var i = 1; i < dados.length; i++) {
     var r = dados[i];
-    if (String(r[C.estado - 1] || '').trim().toLowerCase() !== 'finalizado') continue;
+    var estado = String(r[C.estado - 1] || '').trim().toLowerCase();
+    if (estado !== 'finalizado' && estado !== 'cancelado') continue;   // finalizadas E canceladas
     var rost = String(r[C.rostering - 1] || '').trim();
-    if (!rost) continue;
+    var routeId = String(r[C.routeId - 1] || '').trim();
+    // chave: usa o Rostering ID (Protocolo); se vazio/"0", usa o Route ID (Travel ID).
+    // As faixas de numeração não se sobrepõem, então não precisa de prefixo.
+    var idBase = (rost && rost !== '0') ? rost : routeId;
+    if (!idBase) continue;   // sem protocolo E sem route id → não dá pra chavear
     var trecho = String(r[C.trecho - 1] || '').trim();
-    var chave = rost + '|' + trecho;
+    var chave = idBase + '|' + trecho;
     mapa[chave] = {
       chave: chave,
       rostering_id: rost,
+      route_id: routeId,
       trecho: trecho,
       data: paraData(r[C.data - 1]),
       servico: txt(r[C.servico - 1]),
@@ -56,6 +62,7 @@ function enviarHistoricoSupabase() {
       estado: txt(r[C.estado - 1]),
       resultado: txt(r[C.substatus - 1]),
       pacotes: paraInt(r[C.pacotes - 1]),
+      motivo_cancelamento: txt(r[C.motivoCancel - 1]),
       causa_raiz: txt(r[C.causaRaiz - 1])
     };
   }
@@ -83,13 +90,14 @@ function enviarHistoricoSupabase() {
   SpreadsheetApp.getActiveSpreadsheet().toast(msg, erro ? 'Falhou' : 'OK', 10);
 }
 
-// Rode UMA vez: agenda o envio todo dia às 07h30 (depois do fechamento da madrugada).
+// Rode UMA vez: agenda o envio DUAS vezes por dia (~07h30 e ~19h30).
 function agendarHistoricoSupabase() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'enviarHistoricoSupabase') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('enviarHistoricoSupabase').timeBased().everyDays(1).atHour(7).nearMinute(30).create();
-  SpreadsheetApp.getActiveSpreadsheet().toast('Agendado: envia ao Supabase todo dia ~07h30.', 'OK', 6);
+  ScriptApp.newTrigger('enviarHistoricoSupabase').timeBased().everyDays(1).atHour(19).nearMinute(30).create();
+  SpreadsheetApp.getActiveSpreadsheet().toast('Agendado: envia ao Supabase ~07h30 e ~19h30.', 'OK', 6);
 }
 
 /* ---- helpers ---- */
