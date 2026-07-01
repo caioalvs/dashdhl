@@ -12,7 +12,8 @@ Tema DHL: amarelo `#FFCC00` e vermelho `#D40511` (vermelho reservado a alertas) 
 - `app.js` — toda a lógica: carregamento dos CSVs, parser, mapeadores, KPIs, gráficos (Chart.js), mapa (Leaflet), filtros, busca, detalhe, etc.
 - `data.js` — dados de **exemplo** (usados só se `DATA_SOURCE = 'sample'`)
 - `abrir-painel.bat` + `server.py` — servidor local sem cache (não precisam ir pro GitHub)
-- `coordenadas-service-centers.gs.txt` — Apps Script de apoio que roda **na planilha** (não no site): preenche as coordenadas dos service centers na coluna H da aba Links
+- `coordenadas-service-centers.gs.txt` — Apps Script que roda **na planilha**: preenche as coordenadas dos service centers na coluna H da aba Links
+- `historico-supabase-apps-script.gs.txt` + `historico-supabase-setup.md` — Apps Script + SQL do **histórico no Supabase** (alimenta os Relatórios)
 
 ## As visões
 
@@ -21,8 +22,9 @@ Tema DHL: amarelo `#FFCC00` e vermelho `#D40511` (vermelho reservado a alertas) 
 3. **ETA** — veículos chegando para carregar. No prazo / Atrasado / Aguardando.
 4. **ETD** — veículos em viagem. Faixas de risco, parados, **aguardando início**, não prioritárias, posto fiscal, e barra de progresso por rota.
 5. **XPT** — validação de checkpoint (bipagem CPT).
-6. **PORTAL** — auditoria base Meli × Portal × SM (divergências).
+6. **PORTAL** — auditoria base Meli × Portal × SM (divergências) + saída programada.
 7. **MAPA** — frota sobre a estrada (rota real), posição por % concluído.
+8. **RELATÓRIOS** — histórico de viagens finalizadas (via Supabase): pontualidade, pacotes, ocorrências, finalizadas por hora e volumetria de saída dia/noite, por período (diário → anual).
 
 ## Fonte de dados (modo produção)
 
@@ -37,11 +39,13 @@ O painel **se atualiza sozinho a cada 5 min** (`AUTO_REFRESH_MIN`). O botão **�
 
 Colunas lidas por **posição** (letra), via `cell(row,'X')`:
 
-**ETA** — `F` horário máx. de chegada · `G` horário real → **G < F No prazo**, **G ≥ F Atrasado**, **G vazio Aguardando** · `U` status da viagem.
+**ETA** — `F` horário máx. de chegada · `G` horário real → **G < F No prazo**, **G ≥ F Atrasado**, **G vazio Aguardando** · `U` status da viagem · coluna **Ocorrência/Motivo** (ocorrência + causa raiz da Base), também no popup do mapa.
 
-**ETD** — `A` protocolo (= Rostering ID) · `B` nomenclatura · `C` placa · `F` horário destino · `L` status da SM · `Q` km/h médio necessário (≤46 No prazo · 47–55 Risco · >55 Possível atraso) · `R` km última hora · `S` velocidade · `U`/`V` posto fiscal. XPT/REV/reversa → "Não prioritárias".
+**ETD** — `A` protocolo (= Rostering ID) · `B` nomenclatura · `C` placa · `D` CPT · `F` horário destino · `L` status da SM · `Q` km/h médio necessário (≤46 No prazo · 47–55 Risco · >55 Possível atraso) · `R` km última hora · `S` velocidade · `T` pacotes · `U`/`V` posto fiscal · `W` **Documentos (DOCS)**. XPT/REV/reversa → "Não prioritárias".
 
-**Base** (fonte central, liga por **Rostering ID**) — `AM` Estado (`Pendente`/`Em andamento`/`Finalizado`/`Cancelado`) · `AN` Substatus · `T` saída real da origem · `AQ` causa raiz. **A Base manda sobre a SM**: `Pendente` → "Aguardando início" (não vira parado/risco); `Finalizado`/`Cancelado` → oculta; `Em andamento` → continua visível mesmo se a SM finalizou antes (divergência a corrigir).
+**Base** (fonte central, liga por **Rostering ID**) — `AM` Estado (`Pendente`/`Em andamento`/`Finalizado`/`Cancelado`) · `AN` Substatus · `S` saída **programada** · `T` saída real · `AQ` causa raiz. **A Base manda sobre a SM**: `Pendente` → "Aguardando início" (não vira parado/risco); `Finalizado`/`Cancelado` → oculta; `Em andamento` → continua visível mesmo se a SM finalizou antes (divergência a corrigir). É **janela rolante de ~13 dias** — histórico longo vai pro Supabase.
+
+**Portal** — a coluna **Saída programada** vem da Base (col `S`) pelo protocolo.
 
 **Origem-destino** (liga por **nomenclatura**, col F) — `B`/`C` sigla/nome origem · `D`/`E` sigla/nome destino.
 
@@ -56,6 +60,10 @@ Colunas lidas por **posição** (letra), via `cell(row,'X')`:
 ### Coordenadas dos service centers (coluna H)
 
 Os endereços escritos costumam ser marcos de rodovia que o geocodificador não acha, então a coordenada exata vem da **coluna H** da aba Links. O script `coordenadas-service-centers.gs.txt` preenche essa coluna automaticamente (resolvendo os links curtos do Maps) — roda na planilha em Extensões → Apps Script, é re-rodável e pode ter gatilho diário. Casos que o script não resolve dá pra preencher na mão: clique direito no Maps → copiar coordenadas → colar em H no formato `-23.5112776, -46.8232641` (ponto no decimal).
+
+### Histórico e Relatórios (Supabase)
+
+A Base só guarda ~13 dias, então o histórico longo vive num **Supabase** (Postgres grátis). Fluxo: Base → `historico-supabase-apps-script.gs.txt` (Apps Script diário) → tabela `viagens_historico` → aba **Relatórios** lê via REST com a chave `anon` (RLS só-leitura). Grava só viagens **Finalizado**, chave `protocolo|trecho` (viagem multi-trecho tem 1 linha por trecho). A aba Relatórios agrega no cliente por período (Hoje → Ano): pontualidade (no prazo × atraso), pacotes, ocorrências, finalizadas por hora da chegada e volumetria de saída por turno (dia 06:30–18:30 / noite 18:30–06:30). Setup em `historico-supabase-setup.md`. A chave `service_role` (escrita) fica **só** no Apps Script; a `anon` é pública por design.
 
 ## Interatividade
 

@@ -1,0 +1,80 @@
+/**
+ * HISTÓRICO DE VIAGENS — armazena o passado que a aba Base perde.
+ *
+ * A aba Base é uma janela rolante (~13 dias): viagens antigas somem dela.
+ * Este script roda todo dia, pega as viagens FINALIZADAS da Base e grava
+ * numa aba nova "Histórico" (uma linha por viagem), sem duplicar. Assim o
+ * painel consegue montar relatório diário / semanal / mensal / anual.
+ *
+ * COMO USAR (uma vez):
+ *  1) Planilha → Extensões → Apps Script.
+ *  2) Cole este código (pode ser no mesmo projeto dos outros scripts).
+ *  3) Confira NOME_ABA_BASE abaixo (o nome da aba Base).
+ *  4) Rode "gravarHistorico" uma vez (autorize). Ele já traz os ~13 dias atuais.
+ *  5) Rode "agendarHistorico" uma vez pra ele rodar sozinho todo dia às 07h.
+ *
+ * Re-rodável: só adiciona viagens novas (não duplica pelo Rostering ID).
+ */
+
+var NOME_ABA_BASE = 'Base';        // nome da aba Base (fonte)
+var NOME_ABA_HIST = 'Histórico';   // aba de destino (criada se não existir)
+
+// Colunas da Base (1-indexado, como o Apps Script usa)
+var C = {
+  rostering: 2, servico: 3, data: 4, origem: 15,
+  origemETD: 19,  // saída programada
+  origemATD: 20,  // saída real
+  destino: 24, destinoATA: 26, // chegada real ao destino
+  estado: 39, substatus: 40, pacotes: 37, causaRaiz: 43
+};
+
+var CAB_HIST = ['Data','RosteringID','Servico','Origem','Destino',
+  'SaidaProgramada','SaidaReal','Chegada','Estado','Resultado','Pacotes','CausaRaiz'];
+
+function gravarHistorico() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var base = ss.getSheetByName(NOME_ABA_BASE);
+  if (!base) { SpreadsheetApp.getUi().alert('Aba "' + NOME_ABA_BASE + '" não encontrada.'); return; }
+
+  var hist = ss.getSheetByName(NOME_ABA_HIST);
+  if (!hist) { hist = ss.insertSheet(NOME_ABA_HIST); hist.appendRow(CAB_HIST); }
+
+  // já gravados (pela chave RosteringID, coluna B do Histórico)
+  var jaTem = {};
+  var ultHist = hist.getLastRow();
+  if (ultHist > 1) {
+    hist.getRange(2, 2, ultHist - 1, 1).getValues().forEach(function (r) {
+      var k = String(r[0]).trim(); if (k) jaTem[k] = true;
+    });
+  }
+
+  var dados = base.getDataRange().getValues(); // inclui cabeçalho na linha 0
+  var novas = [];
+  for (var i = 1; i < dados.length; i++) {
+    var r = dados[i];
+    var estado = String(r[C.estado - 1] || '').trim().toLowerCase();
+    if (estado !== 'finalizado') continue;          // só viagens concluídas
+    var rost = String(r[C.rostering - 1] || '').trim();
+    if (!rost || jaTem[rost]) continue;             // sem chave ou já gravada
+    jaTem[rost] = true;
+    novas.push([
+      r[C.data - 1], rost, r[C.servico - 1], r[C.origem - 1], r[C.destino - 1],
+      r[C.origemETD - 1], r[C.origemATD - 1], r[C.destinoATA - 1],
+      r[C.estado - 1], r[C.substatus - 1], r[C.pacotes - 1], r[C.causaRaiz - 1]
+    ]);
+  }
+
+  if (novas.length) {
+    hist.getRange(hist.getLastRow() + 1, 1, novas.length, CAB_HIST.length).setValues(novas);
+  }
+  ss.toast('Histórico: ' + novas.length + ' viagem(ns) nova(s) gravada(s).', 'OK', 8);
+}
+
+// Rode UMA vez: agenda o gravarHistorico pra rodar sozinho todo dia às 07h.
+function agendarHistorico() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'gravarHistorico') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('gravarHistorico').timeBased().everyDays(1).atHour(7).create();
+  SpreadsheetApp.getActiveSpreadsheet().toast('Agendado: grava o histórico todo dia às 07h.', 'OK', 6);
+}

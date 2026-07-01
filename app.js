@@ -49,6 +49,13 @@ const SHEET_CSV = {
   acompCpt: ''   // (opcional) URL CSV da aba ACOMP CPT
 };
 
+// Supabase (histórico de viagens finalizadas). A chave anon é pública por design
+// (só leitura, protegida por RLS). Escrita é feita pelo Apps Script (service_role).
+const SUPABASE = {
+  url:  'https://dvbezzmfnvbpumnwrqhj.supabase.co',
+  anon: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR2YmV6em1mbnZicHVtbndycWhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NzI2NzIsImV4cCI6MjA5ODQ0ODY3Mn0.eNVk3yNMdDmxXFKrlNyg7lE7Zi9Cxxu3QWPzcHA_kqs'
+};
+
 const AUTO_REFRESH_MIN = 5;        // intervalo de auto-atualização (minutos) no modo 'sheets'
 
 // Estado de filtros por aba (multi-seleção: arrays; search é texto)
@@ -337,6 +344,11 @@ function enrichData(){
     }
     d.classificacao = cls;
     d.classificacaoTexto = txt;
+    // Ocorrência (motivo em sistema) e causa raiz da Base — pra saber o PORQUÊ do atraso
+    const pk = String(d.protocolo || '').trim();
+    d.ocorrencia = OCOR_INDEX[pk] || '';
+    const b = BASE_INDEX[pk];
+    d.causaRaiz = (b && b.causaRaiz ? b.causaRaiz.trim() : '');
   });
 
   // ---- ETD: faixa pela coluna Q (km/h médio necessário), parados (col L) e prioridade
@@ -492,7 +504,7 @@ function renderEtdKpis(rows){
 function renderEtaTable(rows){
   const tb = $('#eta-tbody');
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="10"><div class="empty-state">Nenhuma rota corresponde aos filtros.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="11"><div class="empty-state">Nenhuma rota corresponde aos filtros.</div></td></tr>`;
   } else {
     const ord = { vermelho:0, cinza:1, verde:2 };  // críticos (atrasados) no topo
     rows = [...rows].sort((a,b) => (ord[a.classificacao]??3) - (ord[b.classificacao]??3));
@@ -508,6 +520,7 @@ function renderEtaTable(rows){
         <td>${escapeHtml(d.statusK || d.status || '—')}</td>
         <td>${escapeHtml(d.statusL || '—')}</td>
         <td><span class="resp-pill">${escapeHtml(d.statusViagem||'—')}</span></td>
+        <td class="ocor">${motivoInner(d)}</td>
       </tr>`).join('');
   }
   $('#eta-count').textContent = rows.length;
@@ -599,7 +612,7 @@ function fillEtdTable(key, rows){
   $('#etd-cnt-'+key).textContent = rows.length;
   const tb = $('#etd-tbody-'+key);
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="13"><div class="empty-state">Nenhuma rota nesta faixa.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="14"><div class="empty-state">Nenhuma rota nesta faixa.</div></td></tr>`;
     return;
   }
   rows.sort((a,b) => (a.statusRank - b.statusRank) || ((b.kmMedio||0) - (a.kmMedio||0)));  // já iniciados primeiro
@@ -617,8 +630,28 @@ function fillEtdTable(key, rows){
       <td>${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
       <td>${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
+      ${docCell(d)}
       ${ocorCell(d)}
     </tr>`).join('');
+}
+
+// célula de documentos (coluna W = DOCS): verde se enviado/ok, neutro caso contrário
+function docCell(d){
+  const v = (d.docs||'').trim();
+  if(!v) return `<td><span class="ocor-empty">—</span></td>`;
+  const ok = /enviad|ok|conclu|valid/i.test(v);
+  return `<td><span class="doc-badge ${ok?'doc-ok':'doc-pend'}">${escapeHtml(v)}</span></td>`;
+}
+
+// conteúdo do motivo (ocorrência + causa raiz da Base); vermelho se atrasado/possível atraso
+function motivoInner(d){
+  const parts = [];
+  if(d.ocorrencia) parts.push(d.ocorrencia);
+  if(d.causaRaiz)  parts.push('Causa: ' + d.causaRaiz);
+  if(!parts.length) return `<span class="ocor-empty">—</span>`;
+  const crit = d.classificacao === 'vermelho' || d.risco === 'vermelho';
+  const txt = parts.join(' · ');
+  return `<span class="${crit?'ocor-alert':'ocor-info'}" title="${escapeHtml(txt)}">${escapeHtml(txt)}</span>`;
 }
 
 // célula de ocorrência (motivo em sistema); destaca em vermelho se a rota é possível atraso
@@ -632,7 +665,7 @@ function fillEtdNaoPrio(rows){
   $('#etd-cnt-nao').textContent = rows.length;
   const tb = $('#etd-tbody-nao');
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="11"><div class="empty-state">Nenhuma rota XPT/reversa no momento.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="12"><div class="empty-state">Nenhuma rota XPT/reversa no momento.</div></td></tr>`;
     return;
   }
   tb.innerHTML = rows.map(d => `
@@ -647,6 +680,7 @@ function fillEtdNaoPrio(rows){
       <td>${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
       <td>${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
+      ${docCell(d)}
       ${ocorCell(d)}
     </tr>`).join('');
 }
@@ -682,11 +716,14 @@ function renderValTable(){
   $('#val-tbody').innerHTML = rows.map(d=>{
     const temDiv = (d.divergencia||'').trim() !== '';
     const cls = temDiv ? 'b-vermelho' : 'b-verde';
+    const base = BASE_INDEX[String(d.protocolo||'').trim()];
+    const saida = base && base.origemETD ? base.origemETD.trim() : '';
     return `
     <tr class="${temDiv?'crit':''}">
       <td class="mono">${escapeHtml(d.protocolo)}</td>
       <td class="mono">${escapeHtml(d.servico)}</td>
       <td class="mono">${escapeHtml(d.placas)}</td>
+      <td>${saida ? escapeHtml(saida) : '<span class="ocor-empty">—</span>'}</td>
       <td><span class="badge ${cls}"><span class="badge-dot"></span>${escapeHtml(d.statusPortal||'—')}</span></td>
       <td>${temDiv ? `<span class="ocor-alert">${escapeHtml(d.divergencia)}</span>` : '<span class="ocor-empty">—</span>'}</td>
     </tr>`;
@@ -1071,6 +1108,105 @@ function renderGestaoTrend(){
   });
 }
 
+/* ---- Aba Relatórios (histórico de viagens via Supabase) ---------------- */
+let _relPeriodo = '7d';
+async function fetchHistorico(startISO, endISO){
+  if(!SUPABASE.url || !SUPABASE.anon) return { ok:false, rows:[] };
+  const cols = 'data,resultado,pacotes,chegada,saida_programada,causa_raiz,destino,servico';
+  const q = `${SUPABASE.url}/rest/v1/viagens_historico?select=${cols}&data=gte.${startISO}&data=lte.${endISO}&order=data.asc`;
+  const headers = { apikey: SUPABASE.anon, Authorization: 'Bearer ' + SUPABASE.anon };
+  let all = [], offset = 0; const page = 1000;
+  try {
+    for(;;){
+      const r = await fetch(`${q}&limit=${page}&offset=${offset}`, { headers });
+      if(!r.ok) return { ok:false, rows:all, err:r.status };
+      const chunk = await r.json();
+      all = all.concat(chunk);
+      if(chunk.length < page) break;
+      offset += page;
+      if(offset > 500000) break;
+    }
+  } catch(e){ return { ok:false, rows:all, err:'rede' }; }
+  return { ok:true, rows:all };
+}
+function relRange(key){
+  const end = new Date(), start = new Date();
+  const dias = { hoje:0, '7d':6, mes:29, tri:89, sem:179, ano:364 };
+  start.setDate(end.getDate() - (dias[key] != null ? dias[key] : 6));
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return { start: fmt(start), end: fmt(end) };
+}
+function _horaDe(s){ const m = String(s||'').match(/[ T](\d{1,2}):(\d{2})/); return m ? +m[1] : null; }
+function _minDe(s){ const m = String(s||'').match(/[ T](\d{1,2}):(\d{2})/); return m ? (+m[1]*60 + +m[2]) : null; }
+
+async function renderRelatorios(){
+  const wrap = $('#rel-wrap'); if(!wrap) return;
+  const { start, end } = relRange(_relPeriodo);
+  const hint = $('#rel-periodo-hint');
+  if(hint) hint.textContent = `${start.split('-').reverse().join('/')} — ${end.split('-').reverse().join('/')}`;
+  const st = $('#rel-status'); if(st) st.textContent = 'Carregando…';
+  const res = await fetchHistorico(start, end);
+  if(!res.ok && !res.rows.length){
+    if(st) st.textContent = '';
+    const k = $('#rel-kpis'); if(k) k.innerHTML = `<div class="empty-state" style="padding:36px;grid-column:1/-1">Não consegui ler o histórico agora${res.err?` (erro ${res.err})`:''}. Recarregue em instantes.</div>`;
+    return;
+  }
+  const rows = res.rows;
+  const total   = rows.length;
+  const noPrazo = rows.filter(r => /no prazo/i.test(r.resultado||'')).length;
+  const atraso  = rows.filter(r => /atrasad/i.test(r.resultado||'')).length;
+  const ocor    = rows.filter(r => (r.causa_raiz||'').trim() !== '').length;
+  const pacotes = rows.reduce((s,r) => s + (parseInt(r.pacotes,10)||0), 0);
+  const pct = total ? Math.round(noPrazo/total*100) : 0;
+  const porHora = new Array(24).fill(0);
+  rows.forEach(r => { const h = _horaDe(r.chegada); if(h!=null && h>=0 && h<24) porHora[h]++; });
+  let dia=0, noite=0;
+  rows.forEach(r => { const m = _minDe(r.saida_programada); if(m==null) return; (m>=390 && m<1110) ? dia++ : noite++; });
+  const causas = {}; rows.forEach(r => { const c=(r.causa_raiz||'').trim(); if(c) causas[c]=(causas[c]||0)+1; });
+  const topCausas = Object.entries(causas).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const dest = {}; rows.forEach(r => { const d=(r.destino||'—').split(',')[0].trim()||'—'; dest[d]=(dest[d]||0)+1; });
+  const topDest = Object.entries(dest).sort((a,b)=>b[1]-a[1]).slice(0,6);
+
+  if(st) st.textContent = `${total.toLocaleString('pt-BR')} viagens no período`;
+  const k = $('#rel-kpis');
+  if(k) k.innerHTML = [
+    ['k-total','Viagens finalizadas', total.toLocaleString('pt-BR'), ''],
+    ['k-green','Pontualidade', pct+'%', `${noPrazo.toLocaleString('pt-BR')} no prazo`],
+    ['k-red','Atrasadas', atraso.toLocaleString('pt-BR'), total?Math.round(atraso/total*100)+'% do total':''],
+    ['k-amber','Com ocorrência', ocor.toLocaleString('pt-BR'), ''],
+    ['k-blue','Pacotes', pacotes.toLocaleString('pt-BR'), 'no período'],
+  ].map(([c,l,v,s]) => `<div class="kpi-card ${c}"><div class="kpi-label">${l}</div><div class="kpi-value tabular">${v}</div><div class="kpi-sub">${s}</div></div>`).join('');
+
+  renderRelCharts({ noPrazo, atraso, porHora, dia, noite });
+  const rc = $('#rel-causas');
+  if(rc) rc.innerHTML = topCausas.length ? topCausas.map(([c,n])=>`<div class="ca-row"><span class="ca-dot" style="background:var(--red)"></span><div style="flex:1">${escapeHtml(c)}</div><b style="font-family:var(--font-num)">${n}</b></div>`).join('') : `<div class="empty-state" style="padding:14px">Sem ocorrências no período. 👍</div>`;
+  const rd = $('#rel-destinos');
+  if(rd) rd.innerHTML = topDest.length ? topDest.map(([d,n])=>`<div class="ca-row"><span class="ca-dot" style="background:var(--yellow-dim)"></span><div style="flex:1">${escapeHtml(d)}</div><b style="font-family:var(--font-num)">${n}</b></div>`).join('') : `<div class="empty-state" style="padding:14px">Sem dados.</div>`;
+}
+function renderRelCharts({ noPrazo, atraso, porHora, dia, noite }){
+  if(typeof Chart === 'undefined') return;
+  let cv = $('#chart-rel-sla');
+  if(cv){ destroyChart('relSla'); charts.relSla = new Chart(cv, { type:'doughnut',
+    data:{ labels:['No prazo','Atrasado'], datasets:[{ data:[noPrazo,atraso], backgroundColor:[PALETTE.green,PALETTE.red], borderWidth:0 }] },
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'62%', plugins:{ legend:{ position:'bottom', labels:{ padding:12, usePointStyle:true, pointStyle:'circle' } } } } }); }
+  cv = $('#chart-rel-hora');
+  if(cv){ destroyChart('relHora'); charts.relHora = new Chart(cv, { type:'bar',
+    data:{ labels:Array.from({length:24}, (_,h)=>String(h).padStart(2,'0')+'h'), datasets:[{ data:porHora, backgroundColor:PALETTE.amber, borderRadius:3, borderWidth:0 }] },
+    options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } }, plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ title:(t)=>t[0].label, label:(c)=>`${c.parsed.y} finalizadas` } } } } }); }
+  cv = $('#chart-rel-turno');
+  if(cv){ destroyChart('relTurno'); charts.relTurno = new Chart(cv, { type:'doughnut',
+    data:{ labels:['Dia · 06:30–18:30','Noite · 18:30–06:30'], datasets:[{ data:[dia,noite], backgroundColor:['#f59e0b','#334155'], borderWidth:0 }] },
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'62%', plugins:{ legend:{ position:'bottom', labels:{ padding:12, usePointStyle:true, pointStyle:'circle' } } } } }); }
+}
+function bindRelatorios(){
+  $$('.rel-per-btn').forEach(b => b.addEventListener('click', () => {
+    _relPeriodo = b.dataset.per;
+    $$('.rel-per-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    renderRelatorios();
+  }));
+}
+
 /* ----------------------------------------------------------------------- */
 /* Painel de detalhe da rota (clique numa linha)                            */
 /* ----------------------------------------------------------------------- */
@@ -1441,7 +1577,7 @@ function bindTabs(){
       $$('.tab-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       const tab = btn.dataset.tab;
-      ['eta','etd','xpt','validacao','mapa','alertas','gestao'].forEach(t=>{
+      ['eta','etd','xpt','validacao','mapa','alertas','gestao','relatorios'].forEach(t=>{
         const v = $('#view-'+t); if(v) v.style.display = (t===tab)?'block':'none';
       });
       // recalcula tamanho dos gráficos da aba aberta
@@ -1450,6 +1586,7 @@ function bindTabs(){
       if(tab==='mapa') renderFleetMap();
       if(tab==='alertas'){ renderAlertas(); renderTrend(); }
       if(tab==='gestao'){ renderGestao(); Object.values(charts).forEach(c=>c.resize()); }
+      if(tab==='relatorios'){ renderRelatorios(); }
       saveView();
     });
   });
@@ -1676,6 +1813,7 @@ async function boot(){
   bindGlobalSearch();
   bindKeyboard();
   bindViewTools();
+  bindRelatorios();
   startHealthMonitor();
   const savedTab = restoreView();   // recupera filtros + aba ativa salvos
 
@@ -1777,7 +1915,7 @@ function renderFleetMap(){
     }
     const pct = Math.round(frac * 100);
     L.circleMarker(pos, { radius: mapFocus===d.protocolo?9:7, color:'#fff', weight:1.5, fillColor:color, fillOpacity:.95 })
-      .bindPopup(`<b>${escapeHtml(d.protocolo)}</b><br>${escapeHtml(d.origemDisplay||d.origemGeo||'?')} → ${escapeHtml(d.destinoDisplay||d.destinoGeo||'?')}<br>${pct}% concluído${d.kmFaltante!=null?' · '+d.kmFaltante+' km restantes':''}<br>${escapeHtml(d.riscoTexto||'')}${d.ocorrencia?'<br>⚠ '+escapeHtml(d.ocorrencia):''}<br><a href="#" onclick="mapIsolate('${escapeHtml(d.protocolo)}');return false;" style="color:#b8860b;font-weight:600">🔍 isolar no mapa</a>`)
+      .bindPopup(`<b>${escapeHtml(d.protocolo)}</b><br>${escapeHtml(d.origemDisplay||d.origemGeo||'?')} → ${escapeHtml(d.destinoDisplay||d.destinoGeo||'?')}<br>${pct}% concluído${d.kmFaltante!=null?' · '+d.kmFaltante+' km restantes':''}<br>${escapeHtml(d.riscoTexto||'')}${d.ocorrencia?'<br>⚠ '+escapeHtml(d.ocorrencia):''}${d.causaRaiz?'<br>Causa: '+escapeHtml(d.causaRaiz):''}<br><a href="#" onclick="mapIsolate('${escapeHtml(d.protocolo)}');return false;" style="color:#b8860b;font-weight:600">🔍 isolar no mapa</a>`)
       .addTo(_fleetLayer);
     plotted++;
     if(d.risco==='verde') np++; else if(d.risco==='amarelo') ri++; else if(d.risco==='vermelho') at++;
@@ -2032,7 +2170,9 @@ function mapEtdRow(row){
     velocidadeAtual: (cell(row,'S') !== '' ? parseNum(cell(row,'S'))                          // S = velocidade atual
                                            : parseNum(pick(x, ['velocidade atual','velocidade','vel atual']))),
     postoU:     cell(row,'U'),   // U = posto fiscal (acompanhamento)
-    postoV:     cell(row,'V')    // V = posto fiscal (acompanhamento)
+    postoV:     cell(row,'V'),   // V = posto fiscal (acompanhamento)
+    docs:       cell(row,'W'),   // W = DOCS (documentos)
+    cpt:        parseDateBR(cell(row,'D')) || parseDateBR(pick(x, ['cpt','cpt previsto','data cpt','horario cpt']))  // D = CPT (checkpoint/saída)
     // origem/destino reais vêm da aba SM (cidade+UF) no enrichData — a coluna O do ETD é o sinal de GPS, não o destino
   };
 }
@@ -2104,6 +2244,7 @@ function mapBaseRow(row){
     protocolo: cell(row,'B'),   // Rostering ID — chave de comunicação
     routeId:   cell(row,'A'),   // Route ID — reserva
     servico:   cell(row,'C'),
+    origemETD: cell(row,'S'),   // horário de saída PROGRAMADO da origem (deveria sair)
     origemATD: cell(row,'T'),   // horário real que saiu da origem
     estado:    cell(row,'AM'),  // Pendente = ainda não iniciou
     substatus: cell(row,'AN'),
