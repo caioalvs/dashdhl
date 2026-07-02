@@ -4,6 +4,8 @@ Torre de controle web da operação de tracking de logística, construída sobre
 
 🌐 **No ar:** https://caioalvs.github.io/dashdhl/ (GitHub Pages — `caioalvs/dashdhl`)
 
+> **Atualização 02/07/2026:** XPT isolado dos indicadores (só na aba XPT); ETD com CPT (col D), cancelamento validado pela SM e km/h médio negativo tratado como possível atraso (topo da lista); Portal com 4 cartões clicáveis (Total, Corretos, Divergências, Recusados) + colunas Estado e Ocorrência; Relatórios com filtro Line Haul × XPT e resumo por destino ao clicar; reversas agrupadas (com pacote no topo); mapa com contagem "sem localização".
+
 Tema DHL: amarelo `#FFCC00` e vermelho `#D40511` (vermelho reservado a alertas) sobre fundo claro. Logo lockup **DHL × Mercado Livre**. Responsivo (no celular a navegação vira barra inferior). Tem tema escuro NOC opcional.
 
 ## Arquivos
