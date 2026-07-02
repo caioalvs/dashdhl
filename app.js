@@ -206,6 +206,7 @@ function initEtdFilters(){
 function getEtaFiltered(){
   const f = filters.eta;
   return DASHBOARD_DATA.eta.filter(d => {
+    if(d.ehXpt) return false;   // XPT é operação à parte — vive só na aba XPT
     if(f.classe.length && !f.classe.includes(d.classificacaoTexto)) return false;
     if(f.status.length && !f.status.includes(d.statusK || d.status)) return false;
     if(f.tipo.length   && !f.tipo.includes(d.tipoRota)) return false;
@@ -223,6 +224,7 @@ function getEtdFiltered(){
   const f = filters.etd;
   return DASHBOARD_DATA.etd.filter(d => {
     if(d.finalizada) return false;   // viagem finalizada na base → não exibe
+    if(d.ehXpt) return false;        // XPT é operação à parte — concentrada na aba XPT
     if(f.banda.length   && !f.banda.includes(d.risco)) return false;
     if(f.posto.length   && !d.postoFiscal) return false;
     if(f.status.length  && !f.status.includes(d.statusSM)) return false;
@@ -346,6 +348,8 @@ function enrichData(){
     }
     d.classificacao = cls;
     d.classificacaoTexto = txt;
+    // XPT é operação à parte — marca pra excluir do ETA (fica só na aba XPT)
+    d.ehXpt = /xpt/i.test(`${d.rota||''} ${d.tipoRota||''}`);
     // Ocorrência (motivo em sistema) e causa raiz da Base — pra saber o PORQUÊ do atraso
     const pk = String(d.protocolo || '').trim();
     d.ocorrencia = OCOR_INDEX[pk] || '';
@@ -361,8 +365,12 @@ function enrichData(){
     }
     let cls = 'cinza', txt = 'Sem dado';
     const q = d.kmMedio;
+    // km/h médio NEGATIVO = o cálculo estourou (já passou do prazo) → já atrasado e piorando.
+    // Vai pra "Possível atraso" e fica no topo (máxima prioridade).
+    d.kmNegativo = (q != null && q < 0);
     if(q != null){
-      if(q <= 46)      { cls = 'verde';    txt = 'No prazo'; }
+      if(q < 0)        { cls = 'vermelho'; txt = 'Possível atraso'; }  // cálculo estourou
+      else if(q <= 46) { cls = 'verde';    txt = 'No prazo'; }
       else if(q <= 55) { cls = 'amarelo';  txt = 'Risco'; }
       else             { cls = 'vermelho'; txt = 'Possível atraso'; }
     }
@@ -380,10 +388,10 @@ function enrichData(){
     d.postoSituacao = sitU;
     d.postoKm = parseNum(d.postoV);
     d.postoFiscal = sitU !== '' && !/sem excepcional/i.test(sitU) && !/^#n\/?a$/i.test(sitU);
-    // Não prioritária: rotas XPT / REV / reversa não são rastreadas com prioridade
-    d.naoPrioritaria = /xpt|rev|revers/i.test(`${d.rota||''} ${d.tipoRota||''}`);
-    // XPT é operação à parte — separa das reversas/não prioritárias
+    // XPT é operação à parte — SEMPRE isolada (nunca entra em SLA/KPIs do Line Haul)
     d.ehXpt = /xpt/i.test(`${d.rota||''} ${d.tipoRota||''}`);
+    // Não prioritária: XPT e reversas. (reversa COM pacotes é repromovida depois de ler a Base)
+    d.naoPrioritaria = d.ehXpt || /rev|revers/i.test(`${d.rota||''} ${d.tipoRota||''}`);
     // Ordem de status SM (já iniciados primeiro)
     d.statusRank = statusRank(d.statusSM);
 
@@ -421,6 +429,24 @@ function enrichData(){
         d.risco = 'cinza';
         d.riscoTexto = 'Aguardando início';
       }
+    }
+
+    // Pacotes da Base (col AK) é a fonte boa — usado pra ordenar as reversas (com pacote primeiro).
+    // Reversas ficam agrupadas na tabela delas (não viram prioritárias). XPT segue isolado.
+    const basePac = (base && base.pacotes != null) ? base.pacotes : null;
+    if(basePac != null && basePac > 0) d.pacotes = basePac;   // não zera ativas
+
+    // Cancelamento/Infrutífera pode ser preenchido na SM (col L) ANTES de a Base atualizar o Estado.
+    // Nesse caso vale a SM: a rota sai da operação (Cancelado nunca aparece nas tabelas).
+    if(/cancel|infrut/i.test(d.statusSM || '')){ d.finalizada = true; d.canceladaSM = true; }
+
+    // CPT (col D): se já passou do CPT e a rota NÃO saiu, é acionável — ou atraso de
+    // carregamento (ver ocorrência), ou cancel/infrutífera ainda não refletido no Estado (ver SM).
+    d.cptEstourou = false;
+    if(d.cpt && !d.finalizada){
+      const partiu = !!(d.origemATD && String(d.origemATD).trim())
+                     || /andamento|finaliz/i.test(d.baseEstado || '');
+      if(!partiu && new Date(d.cpt) < new Date()) d.cptEstourou = true;
     }
 
     // Origem-destino: pela NOMENCLATURA (col F da aba) descobre as siglas/nomes;
@@ -496,7 +522,7 @@ function renderEtdKpis(rows){
   $('#etd-readout').innerHTML = `
     <div class="ca-row"><span class="ca-dot" style="background:var(--green)"></span><div><b>${noprazo}</b> no prazo (≤46 km/h)</div></div>
     <div class="ca-row"><span class="ca-dot" style="background:var(--amber)"></span><div><b>${risco}</b> em risco (47–55)</div></div>
-    <div class="ca-row"><span class="ca-dot" style="background:var(--red)"></span><div><b>${atraso}</b> possível atraso (&gt;55)</div></div>
+    <div class="ca-row"><span class="ca-dot" style="background:var(--red)"></span><div><b>${atraso}</b> possível atraso (&gt;55 ou negativo)</div></div>
     <div class="ca-row"><span class="ca-dot" style="background:var(--amber)"></span><div><b>${parados}</b> parados</div></div>
     <div class="ca-row"><span class="ca-dot" style="background:var(--grey)"></span><div><b>${aguard}</b> aguardando início (não saíram)</div></div>
     <div class="ca-row"><span class="ca-dot" style="background:var(--grey)"></span><div><b>${naoPrio}</b> não prioritárias</div></div>`;
@@ -555,10 +581,10 @@ function progressCell(d){
 
 // Tabelas: 3 prioritárias por faixa (Q) + 1 de não prioritárias (XPT/REV)
 function renderEtdTables(rows){
+  // XPT já sai no getEtdFiltered — aqui é tudo Line Haul
   const prio   = rows.filter(d => !d.naoPrioritaria && !d.naoIniciada);
   const aguard = rows.filter(d => !d.naoPrioritaria &&  d.naoIniciada);
-  const nao    = rows.filter(d =>  d.naoPrioritaria && !d.ehXpt);
-  const xpt    = rows.filter(d =>  d.ehXpt);
+  const nao    = rows.filter(d =>  d.naoPrioritaria);
   const groups = { verde:[], amarelo:[], vermelho:[] };
   prio.forEach(d => { if(groups[d.risco]) groups[d.risco].push(d); });
   fillEtdTable('verde',    groups.verde);
@@ -566,7 +592,6 @@ function renderEtdTables(rows){
   fillEtdTable('vermelho', groups.vermelho);
   fillEtdAguardando(aguard);
   fillEtdNaoPrio(nao);
-  fillEtdXpt(xpt);
   fillEtdPosto(rows.filter(d => d.postoFiscal && !d.naoIniciada));
   $('#etd-count').textContent = rows.length;
 }
@@ -595,20 +620,29 @@ function fillEtdAguardando(rows){
   const c = $('#etd-cnt-aguard'); if(c) c.textContent = rows.length;
   const tb = $('#etd-tbody-aguard'); if(!tb) return;
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="8"><div class="empty-state">Nenhuma rota aguardando início.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="10"><div class="empty-state">Nenhuma rota aguardando início.</div></td></tr>`;
     return;
   }
-  tb.innerHTML = rows.map(d => `
-    <tr>
+  // CPT estourado primeiro (o carro já deveria ter saído)
+  rows = [...rows].sort((a,b) => (b.cptEstourou?1:0) - (a.cptEstourou?1:0));
+  tb.innerHTML = rows.map(d => {
+    const cptTxt = d.cpt ? fmtDateTime(d.cpt) : '—';
+    const cptCell = d.cptEstourou
+      ? `<td><span class="ocor-alert" title="Passou do CPT e não saiu — verificar carregamento ou cancelamento/infrutífera">${cptTxt} ⚠</span></td>`
+      : `<td>${cptTxt}</td>`;
+    return `
+    <tr class="${d.cptEstourou?'crit':''}">
       ${protoTd(d.protocolo)}
       <td class="mono">${escapeHtml(d.rota)}</td>
       <td class="mono">${escapeHtml(d.placa)}</td>
       <td>${escapeHtml(d.destino||'—')}</td>
+      ${cptCell}
       <td>${fmtDateTime(d.etaDestino)||'—'}</td>
       <td><span class="ocor-info">${escapeHtml(d.baseEstado||'Pendente')}</span></td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
+      ${ocorCell(d)}
       <td>${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
-    </tr>`).join('');
+    </tr>`; }).join('');
 }
 
 // Tabela de Posto Fiscal — veículos com excepcionalidade a acompanhar (coluna U), km até o posto (coluna V)
@@ -642,7 +676,8 @@ function fillEtdTable(key, rows){
     tb.innerHTML = `<tr><td colspan="14"><div class="empty-state">Nenhuma rota nesta faixa.</div></td></tr>`;
     return;
   }
-  rows.sort((a,b) => (a.statusRank - b.statusRank) || ((b.kmMedio||0) - (a.kmMedio||0)));  // já iniciados primeiro
+  // km/h negativo (cálculo estourou) no topo; depois já iniciados; depois maior km/h necessário
+  rows.sort((a,b) => (b.kmNegativo?1:0) - (a.kmNegativo?1:0) || (a.statusRank - b.statusRank) || ((b.kmMedio||0) - (a.kmMedio||0)));
   tb.innerHTML = rows.map(d => `
     <tr class="${d.risco==='vermelho'?'crit':''}">
       ${protoTd(d.protocolo)}
@@ -652,7 +687,7 @@ function fillEtdTable(key, rows){
       <td>${fmtDateTime(d.etaDestino)}</td>
       <td>${progressCell(d)}</td>
       <td>${d.kmFaltante!=null ? d.kmFaltante+' km' : '—'}</td>
-      <td><b>${d.kmMedio!=null ? d.kmMedio+' km/h' : '—'}</b></td>
+      <td>${d.kmNegativo ? `<b class="ocor-alert" title="Cálculo estourou — já passou do prazo e atrasando">${d.kmMedio} km/h ⚠</b>` : `<b>${d.kmMedio!=null ? d.kmMedio+' km/h' : '—'}</b>`}</td>
       <td>${d.deslocHora!=null ? d.deslocHora+' km' : '—'}</td>
       <td>${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
@@ -698,11 +733,13 @@ function fillEtdNaoPrio(rows){
   $('#etd-cnt-nao').textContent = rows.length;
   const tb = $('#etd-tbody-nao');
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="12"><div class="empty-state">Nenhuma rota XPT/reversa no momento.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="12"><div class="empty-state">Nenhuma reversa no momento.</div></td></tr>`;
     return;
   }
+  // reversas COM pacote primeiro (prioridade dentro do grupo), depois por qtd de pacotes
+  rows = [...rows].sort((a,b) => ((b.pacotes||0)>0?1:0) - ((a.pacotes||0)>0?1:0) || (b.pacotes||0) - (a.pacotes||0));
   tb.innerHTML = rows.map(d => `
-    <tr>
+    <tr class="${(d.pacotes||0)>0?'row-pac':''}">
       ${protoTd(d.protocolo)}
       <td class="mono">${escapeHtml(d.rota)}</td>
       <td class="mono">${escapeHtml(d.placa)}</td>
@@ -752,28 +789,55 @@ function renderXptTable(){
   }).join('') : `<tr><td colspan="11"><div class="empty-state">Nenhum checkpoint corresponde à busca.</div></td></tr>`;
 }
 
+let _valFilter = 'all';
+const valIsRec = d => /recus/i.test(d.statusPortal||'');
+const valHasDiv = d => (d.divergencia||'').trim() !== '';
 function renderValTable(){
-  const rows = DASHBOARD_DATA.validacao;
-  $('#val-kpi-total').textContent = rows.length;
-  // divergência = coluna O tem texto do que está errado; sem texto = ok
-  const comDiv = rows.filter(d => (d.divergencia||'').trim() !== '').length;
-  $('#val-kpi-ok').textContent  = rows.length - comDiv;
-  $('#val-kpi-div').textContent = comDiv;
-  $('#val-tbody').innerHTML = rows.map(d=>{
-    const temDiv = (d.divergencia||'').trim() !== '';
-    const cls = temDiv ? 'b-vermelho' : 'b-verde';
+  const all = DASHBOARD_DATA.validacao || [];
+  const corretos = all.filter(d => !valHasDiv(d) && !valIsRec(d));
+  const divs = all.filter(valHasDiv);
+  const recs = all.filter(valIsRec);
+  $('#val-kpi-total').textContent = all.length;
+  $('#val-kpi-ok').textContent    = corretos.length;
+  $('#val-kpi-div').textContent   = divs.length;
+  const rec = $('#val-kpi-rec'); if(rec) rec.textContent = recs.length;
+  // card ativo
+  $$('#view-validacao .kpi-card[data-valkpi]').forEach(c => c.classList.toggle('active', c.dataset.valkpi === _valFilter));
+  let rows = all;
+  if(_valFilter === 'corretos') rows = corretos;
+  else if(_valFilter === 'div') rows = divs;
+  else if(_valFilter === 'recusado') rows = recs;
+  const cnt = $('#val-count'); if(cnt) cnt.textContent = rows.length;
+  $('#val-tbody').innerHTML = rows.length ? rows.map(d=>{
+    const temDiv = valHasDiv(d), recusado = valIsRec(d);
+    const cls = recusado ? 'b-vermelho' : (temDiv ? 'b-amarelo' : 'b-verde');
     const base = BASE_INDEX[String(d.protocolo||'').trim()];
-    const saida = base && base.origemETD ? base.origemETD.trim() : '';
+    const saida  = base && base.origemETD ? base.origemETD.trim() : '';
+    const estado = base && base.estado ? base.estado.trim() : '';
+    const ocor   = OCOR_INDEX[String(d.protocolo||'').trim()] || '';
     return `
-    <tr class="${temDiv?'crit':''}">
+    <tr class="${recusado||temDiv?'crit':''}">
       ${protoTd(d.protocolo)}
       <td class="mono">${escapeHtml(d.servico)}</td>
       <td class="mono">${escapeHtml(d.placas)}</td>
       <td>${saida ? escapeHtml(saida) : '<span class="ocor-empty">—</span>'}</td>
+      <td>${estado ? `<span class="ocor-info">${escapeHtml(estado)}</span>` : '<span class="ocor-empty">—</span>'}</td>
       <td><span class="badge ${cls}"><span class="badge-dot"></span>${escapeHtml(d.statusPortal||'—')}</span></td>
       <td>${temDiv ? `<span class="ocor-alert">${escapeHtml(d.divergencia)}</span>` : '<span class="ocor-empty">—</span>'}</td>
+      <td>${ocor ? `<span class="ocor-info" title="${escapeHtml(ocor)}">${escapeHtml(ocor)}</span>` : '<span class="ocor-empty">—</span>'}</td>
     </tr>`;
-  }).join('');
+  }).join('') : `<tr><td colspan="8"><div class="empty-state">Nenhuma rota nesta categoria.</div></td></tr>`;
+}
+function bindValidacao(){
+  const host = $('#view-validacao');
+  if(!host || host._valBound) return; host._valBound = true;
+  host.addEventListener('click', e => {
+    const card = e.target.closest('.kpi-card[data-valkpi]');
+    if(!card) return;
+    const v = card.dataset.valkpi;
+    _valFilter = (_valFilter === v && v !== 'all') ? 'all' : v;   // reclicar volta pra todos
+    renderValTable();
+  });
 }
 
 /* ----------------------------------------------------------------------- */
@@ -908,6 +972,7 @@ function updateNavHealth(){
 function buildAlerts(){
   const A = [];
   (DASHBOARD_DATA.eta || []).forEach(d => {
+    if(d.ehXpt) return;   // XPT à parte
     if(d.classificacao === 'vermelho')
       A.push({ sev:3, cls:'b-vermelho', origem:'ETA', protocolo:d.protocolo, nomen:d.rota, what:'Chegada atrasada', where:`${d.origem||'?'} → ${d.destino||'?'}`, detail:(d.atrasoMin!=null?d.atrasoMin+' min de atraso':'') });
   });
@@ -966,6 +1031,7 @@ async function fetchAtrasosSemOcorrencia(){
   const res = await fetchHistorico(fmt(start), fmt(end));
   if(!res.ok && !res.rows.length) return;
   _riscoRows = res.rows
+    .filter(r => !/xpt/i.test(r.servico||''))   // XPT é operação à parte — fora do risco Line Haul
     .filter(r => /finaliz/i.test(r.estado||'') && /atrasad/i.test(r.resultado||''))
     .filter(r => !relJustificativa(r));   // sem ocorrência em sistema E sem causa raiz
   renderAlertasRisco();
@@ -996,7 +1062,7 @@ function fillLane(key, arr, cls){
 
 /* ---- Histórico leve (localStorage) + tendência de pontualidade ---------- */
 function snapshotPcts(){
-  const eta = DASHBOARD_DATA.eta || [];
+  const eta = (DASHBOARD_DATA.eta || []).filter(d => !d.ehXpt);
   const np = eta.filter(d => d.classificacao === 'verde').length, at = eta.filter(d => d.classificacao === 'vermelho').length;
   const etaPct = (np + at) ? Math.round(np / (np + at) * 100) : null;
   const prio = (DASHBOARD_DATA.etd || []).filter(d => !d.naoPrioritaria && !d.finalizada && !d.naoIniciada);
@@ -1056,6 +1122,7 @@ function destKey(s){ return (s||'—').split(',')[0].trim() || '—'; }
 function buildOfensores(){
   const out = [];
   (DASHBOARD_DATA.eta || []).forEach(d => {
+    if(d.ehXpt) return;   // XPT à parte
     if(d.classificacao === 'vermelho')
       out.push({ proto:d.protocolo, nomen:d.rota, origem:d.origem, destino:d.destino, fonte:'ETA', sev:3, cls:'b-vermelho',
         status:'Chegada atrasada', motivo:(d.atrasoMin!=null?`Atrasada ${d.atrasoMin} min na chegada à origem`:'Chegada atrasada na origem') });
@@ -1091,7 +1158,7 @@ function gestaoJump(jump){
 }
 function renderGestao(){
   const etd = (DASHBOARD_DATA.etd || []).filter(d => !d.finalizada && !d.naoPrioritaria);
-  const eta = DASHBOARD_DATA.eta || [];
+  const eta = (DASHBOARD_DATA.eta || []).filter(d => !d.ehXpt);
   const { etaPct, etdPct } = snapshotPcts();
   const hl = $('#gestao-headline');
   if(hl) hl.innerHTML = (etdPct != null)
@@ -1189,6 +1256,11 @@ function renderGestaoTrend(){
 
 /* ---- Aba Relatórios (histórico de viagens via Supabase) ---------------- */
 let _relPeriodo = '7d';
+let _relTipoOp = 'linehaul';    // Line Haul (padrão) × XPT — separa as duas operações
+function relTipoMatch(r){
+  const isXpt = /xpt/i.test(r.servico||'');
+  return _relTipoOp === 'xpt' ? isXpt : !isXpt;
+}
 let _relStart = '', _relEnd = '';
 let _relCancMotivo = null;      // filtro do painel de cancelamentos
 let _relAtrasoTipo = null;      // filtro de tipo no painel de atrasos
@@ -1248,8 +1320,8 @@ async function renderRelatorios(){
     const k = $('#rel-kpis'); if(k) k.innerHTML = `<div class="empty-state" style="padding:36px;grid-column:1/-1">Não consegui ler o histórico agora${res.err?` (erro ${res.err})`:''}. Recarregue em instantes.</div>`;
     return;
   }
-  _relData.fin  = res.rows.filter(r => /finaliz/i.test(r.estado||''));
-  _relData.canc = res.rows.filter(r => /cancel/i.test(r.estado||''));
+  _relData.fin  = res.rows.filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r));
+  _relData.canc = res.rows.filter(r => /cancel/i.test(r.estado||'') && relTipoMatch(r));
   _relCancMotivo = null; _relAtrasoTipo = null;
   _relRowSeq = 0; for(const kk in _relRowMap) delete _relRowMap[kk];
   renderRelResumo();
@@ -1382,7 +1454,68 @@ function renderRelDestinos(){
   _relData.fin.forEach(r => { const k=(r.destino||'—'); if(!d[k]) d[k]={n:0,at:0}; d[k].n++; if(/atrasad/i.test(r.resultado||'')) d[k].at++; });
   const top = Object.entries(d).sort((a,b)=>b[1].n-a[1].n).slice(0,10);
   const tb = $('#rel-dest-tbody');
-  if(tb) tb.innerHTML = top.length ? top.map(([dest,o])=>{ const p=Math.round((o.n-o.at)/o.n*100); const cls=p>=90?'b-verde':(p>=80?'b-amarelo':'b-vermelho'); return `<tr><td>${escapeHtml(dest)}</td><td class="mono">${o.n}</td><td class="mono">${o.at}</td><td><span class="badge ${cls}"><span class="badge-dot"></span>${p}%</span></td></tr>`; }).join('') : `<tr><td colspan="4"><div class="empty-state">Sem dados.</div></td></tr>`;
+  if(tb) tb.innerHTML = top.length ? top.map(([dest,o])=>{ const p=Math.round((o.n-o.at)/o.n*100); const cls=p>=90?'b-verde':(p>=80?'b-amarelo':'b-vermelho'); return `<tr class="rel-click" data-dest="${escapeHtml(dest)}"><td>${escapeHtml(dest)}</td><td class="mono">${o.n}</td><td class="mono">${o.at}</td><td><span class="badge ${cls}"><span class="badge-dot"></span>${p}%</span></td></tr>`; }).join('') : `<tr><td colspan="4"><div class="empty-state">Sem dados.</div></td></tr>`;
+}
+// Resumo do que está acontecendo num destino (clique numa linha da tabela de destinos)
+function openDestDetail(dest){
+  const fin  = _relData.fin.filter(r => (r.destino||'—') === dest);
+  const canc = _relData.canc.filter(r => (r.destino||'—') === dest);
+  const n = fin.length;
+  const at = fin.filter(r => /atrasad/i.test(r.resultado||'')).length;
+  const noPrazo = n - at;
+  const pct = n ? Math.round(noPrazo/n*100) : 0;
+  const pac = fin.reduce((s,r)=>s+(parseInt(r.pacotes,10)||0),0);
+  const mediaPac = n ? Math.round(pac/n) : 0;
+  const infrut = canc.filter(r => /infrut/i.test(r.motivo_cancelamento||'')).length;
+  // rotas atrasadas: identificação + trecho + ocorrência (o detalhe completo)
+  const atrasadas = fin.filter(r => /atrasad/i.test(r.resultado||''));
+  // ocorrências das atrasadas, agrupadas (visão rápida do padrão)
+  const ocorMap = {};
+  atrasadas.forEach(r => { const j = relJustificativa(r) || 'Sem ocorrência registrada'; ocorMap[j] = (ocorMap[j]||0)+1; });
+  const ocorTop = Object.entries(ocorMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  // tipos de rota que atendem esse destino
+  const tipoMap = {};
+  fin.forEach(r => { const t = tipoRota(r.servico) || '—'; tipoMap[t] = (tipoMap[t]||0)+1; });
+  const tipoTop = Object.entries(tipoMap).sort((a,b)=>b[1]-a[1]);
+  const acls = pct>=90 ? 'dt-ok' : (pct>=80 ? 'dt-warn' : 'dt-crit');
+  const op = _relTipoOp === 'xpt' ? 'XPT' : 'Line Haul';
+  let html = `<div class="dt-action ${acls}"><span class="dt-action-ttl">Pontualidade no destino (${op})</span>${pct}% no prazo · ${n} viage${n!==1?'ns':'m'} no período</div>`;
+  html += `<div class="dt-sec">Volume e prazo</div>`
+    + dtField('Viagens finalizadas', n)
+    + dtField('No prazo', noPrazo)
+    + dtField('Atrasadas', at)
+    + dtField('Pontualidade', pct+'%');
+  html += `<div class="dt-sec">Pacotes</div>`
+    + dtField('Total entregue', pac.toLocaleString('pt-BR'))
+    + dtField('Média por viagem', mediaPac.toLocaleString('pt-BR'));
+  if(canc.length) html += `<div class="dt-sec">Cancelamentos</div>`
+    + dtField('Total cancelado', canc.length)
+    + dtField('Infrutíferas', infrut);
+  if(ocorTop.length) html += `<div class="dt-sec">Principais ocorrências (nos atrasos)</div>`
+    + ocorTop.map(([k,v]) => dtField(k, v+'×')).join('');
+  if(atrasadas.length){
+    html += `<div class="dt-sec">Rotas atrasadas — identificação · trecho · ocorrência (${atrasadas.length})</div>`;
+    html += atrasadas.map(r => {
+      const isRost = r.rostering_id && r.rostering_id !== '0';
+      const id  = isRost ? r.rostering_id : (r.route_id || '—');
+      const tag = isRost ? 'Protocolo' : 'Travel ID';
+      const trecho = (r.trecho||'').trim() || `${r.origem||'?'} → ${r.destino||'?'}`;
+      const oc = relJustificativa(r) || 'Sem ocorrência registrada';
+      return `<div class="dt-atr">
+        <div class="dt-atr-top"><span class="mono">${escapeHtml(id)}</span> <span class="id-tag ${isRost?'id-proto':'id-travel'}">${tag}</span>
+          <span class="dt-atr-nom">${escapeHtml(r.servico||'')}</span></div>
+        <div class="dt-atr-tr">${escapeHtml(trecho)}</div>
+        <div class="dt-atr-oc">${escapeHtml(oc)}</div>
+      </div>`;
+    }).join('');
+  }
+  if(tipoTop.length) html += `<div class="dt-sec">Tipos de rota</div>`
+    + tipoTop.map(([k,v]) => dtField(k, v+'×')).join('');
+  $('#dt-title').textContent = `Destino · ${dest}`;
+  $('#dt-body').innerHTML = html;
+  const ov = $('#detail-overlay'); if(!ov) return;
+  ov.style.display = 'flex'; document.body.style.overflow = 'hidden';
+  requestAnimationFrame(() => ov.classList.add('open'));
 }
 // Detalhe completo de uma viagem do histórico (clique numa linha dos Relatórios)
 function openHistDetail(r){
@@ -1477,6 +1610,13 @@ function relKpiAction(which){
   else if(which==='pont'){ relFlash('#rel-pont-panel'); }
 }
 function bindRelatorios(){
+  $$('.rel-op-btn').forEach(b => b.addEventListener('click', () => {
+    _relTipoOp = b.dataset.op;
+    $$('.rel-op-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    _relCancMotivo = null; _relAtrasoTipo = null;
+    renderRelatorios();
+  }));
   $$('.rel-per-btn').forEach(b => b.addEventListener('click', () => {
     _relPeriodo = b.dataset.per;
     $$('.rel-per-btn').forEach(x => x.classList.remove('active'));
@@ -1496,6 +1636,7 @@ function bindRelatorios(){
     const mr = e.target.closest('.rel-motivo-row'); if(mr){ _relCancMotivo = mr.dataset.motivo; renderRelCancelamentos(); return; }
     if(e.target.closest('#rel-canc-back')){ _relCancMotivo = null; renderRelCancelamentos(); return; }
     const chip = e.target.closest('.rel-chip'); if(chip){ _relAtrasoTipo = chip.dataset.tipo || null; renderRelAtrasos(); return; }
+    const dtr = e.target.closest('#rel-dest-tbody tr[data-dest]'); if(dtr){ openDestDetail(dtr.dataset.dest); return; }
     const tr = e.target.closest('#view-relatorios tbody tr[data-rid]'); if(tr){ openHistDetail(_relRowMap[tr.dataset.rid]); return; }
     const rtr = e.target.closest('#view-alertas tbody tr[data-rrid]'); if(rtr){ openHistDetail(_riscoRowMap[rtr.dataset.rrid]); return; }
   });
@@ -1797,8 +1938,9 @@ function animateNumbers(){
 
 function renderAll(){
   enrichData();
-  const etdAtivos = (DASHBOARD_DATA.etd || []).filter(d => !d.finalizada);
-  $('#badgeEta').textContent = DASHBOARD_DATA.eta.length;
+  // Line Haul (XPT é operação à parte, contada só na aba XPT)
+  const etdAtivos = (DASHBOARD_DATA.etd || []).filter(d => !d.finalizada && !d.ehXpt);
+  $('#badgeEta').textContent = (DASHBOARD_DATA.eta || []).filter(d => !d.ehXpt).length;
   $('#badgeEtd').textContent = etdAtivos.length;
   $('#badgeXpt').textContent = DASHBOARD_DATA.xpt.length;
   $('#badgeVal').textContent = DASHBOARD_DATA.validacao.length;
@@ -2111,6 +2253,7 @@ async function boot(){
   bindKeyboard();
   bindViewTools();
   bindRelatorios();
+  bindValidacao();
   { const xs = $('#f-xpt-search'); if(xs) xs.addEventListener('input', () => { _xptSearch = xs.value; renderXptTable(); }); }
   startHealthMonitor();
   const savedTab = restoreView();   // recupera filtros + aba ativa salvos
@@ -2155,7 +2298,7 @@ document.addEventListener('DOMContentLoaded', boot);
 /* ----------------------------------------------------------------------- */
 /* MAPA da frota (Leaflet + OpenStreetMap)                                  */
 /* ----------------------------------------------------------------------- */
-let _map = null, _fleetLayer = null;
+let _map = null, _fleetLayer = null, _mapFitted = false;
 const RISK_COLOR = { verde:'#16a34a', amarelo:'#e08a00', vermelho:'#D40511', cinza:'#9aa0aa' };
 let mapBands = { verde:true, amarelo:true, vermelho:true };   // filtro por faixa no mapa
 let mapFocus = null;                                          // protocolo isolado
@@ -2171,7 +2314,7 @@ function bindMapControls(){
     renderFleetMap();
   }));
   const reset = $('#map-reset');
-  if(reset) reset.addEventListener('click', () => { mapFocus = null; reset.style.display='none'; renderFleetMap(); });
+  if(reset) reset.addEventListener('click', () => { mapFocus = null; _mapFitted = false; reset.style.display='none'; renderFleetMap(); });
 }
 
 function initFleetMap(){
@@ -2193,10 +2336,11 @@ function renderFleetMap(){
     !d.naoPrioritaria && !d.finalizada && !d.naoIniciada &&
     mapBands[d.risco] !== false &&
     (!mapFocus || d.protocolo === mapFocus));
-  let plotted = 0, np = 0, ri = 0, at = 0;
+  let plotted = 0, np = 0, ri = 0, at = 0, semLoc = 0;
   rows.forEach(d => {
     const o = DIST.geo[normKey(d.origemGeo)], dst = DIST.geo[normKey(d.destinoGeo)];
-    if(!o || o === 'FAIL' || !dst || dst === 'FAIL'){ DIST.enqueue(d.origemGeo, d.destinoGeo); return; }
+    if(o === 'FAIL' || dst === 'FAIL'){ semLoc++; return; }            // sem coordenada (não geocodificou)
+    if(!o || !dst){ DIST.enqueue(d.origemGeo, d.destinoGeo); return; }  // ainda resolvendo
     const total = DIST.get(d.origemGeo, d.destinoGeo);
     let frac = 0.5;
     if(total && total > 0 && d.kmFaltante != null) frac = Math.max(0, Math.min(1, (total - d.kmFaltante) / total));
@@ -2220,11 +2364,17 @@ function renderFleetMap(){
     plotted++;
     if(d.risco==='verde') np++; else if(d.risco==='amarelo') ri++; else if(d.risco==='vermelho') at++;
   });
-  if(mapFocus && plotted > 0){ try { _map.fitBounds(_fleetLayer.getBounds(), { maxZoom:9, padding:[40,40] }); } catch(e){} }
+  if(mapFocus && plotted > 0){
+    try { _map.fitBounds(_fleetLayer.getBounds(), { maxZoom:9, padding:[40,40] }); } catch(e){}
+  } else if(!_mapFitted && plotted > 0){
+    // primeira carga: enquadra a frota no Brasil (depois respeita o zoom do usuário)
+    try { _map.fitBounds(_fleetLayer.getBounds(), { maxZoom:6, padding:[30,30] }); _mapFitted = true; } catch(e){}
+  }
   const hl = $('#mapa-ops-headline');
   if(hl){
-    const pend = rows.length - plotted;
-    hl.textContent = `${plotted} no mapa${pend>0?` · ${pend} resolvendo`:''}`;
+    const resolvendo = rows.length - plotted - semLoc;
+    const extra = [resolvendo>0?`${resolvendo} resolvendo`:'', semLoc>0?`${semLoc} sem localização`:''].filter(Boolean).join(' · ');
+    hl.textContent = `${plotted} no mapa${extra?` · ${extra}`:''}`;
   }
   const st = $('#mapa-ops-stats');
   if(st){
@@ -2551,6 +2701,7 @@ function mapBaseRow(row){
     origemATD: cell(row,'T'),   // horário real que saiu da origem
     estado:    cell(row,'AM'),  // Pendente = ainda não iniciou
     substatus: cell(row,'AN'),
+    pacotes:   parseNum(cell(row,'AK')),  // AK = pacotes (reversa com pacotes vira prioritária)
     causaRaiz: cell(row,'AQ')
   };
 }
