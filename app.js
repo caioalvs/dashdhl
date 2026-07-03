@@ -281,14 +281,27 @@ function buildOcorIndex(){
 }
 
 // Índice da aba Base: protocolo (Rostering ID) -> dados centrais (Estado, saída real, causa raiz)
-let BASE_INDEX = {};
+let BASE_INDEX = {};        // por Rostering ID (Protocolo)
+let BASE_ROUTE_INDEX = {};  // por Route ID (Travel ID)
 function buildBaseIndex(){
-  BASE_INDEX = {};
+  BASE_INDEX = {}; BASE_ROUTE_INDEX = {};
   (DASHBOARD_DATA.base || []).forEach(r => {
     const p = String(r.protocolo || '').trim();
-    if(!p) return;
-    BASE_INDEX[p] = r;
+    const rt = String(r.routeId || '').trim();
+    if(p && p !== '0') BASE_INDEX[p] = r;
+    if(rt && rt !== '0') BASE_ROUTE_INDEX[rt] = r;
   });
+}
+// "#N/A", vazio ou "0" contam como sem valor
+function isNA(v){ const s = String(v == null ? '' : v).trim(); return !s || s === '0' || /^#n\/?a$/i.test(s); }
+// Acha a linha da Base por QUALQUER chave e diz o tipo: Protocolo (Rostering) ou Travel ID (Route).
+// As faixas de numeração não se sobrepõem, então dá pra confiar em qual índice bateu.
+function baseForId(id){
+  const s = String(id == null ? '' : id).trim();
+  if(!s || s === '0') return null;
+  if(BASE_INDEX[s])       return { row: BASE_INDEX[s],       tipo: 'Protocolo' };
+  if(BASE_ROUTE_INDEX[s]) return { row: BASE_ROUTE_INDEX[s], tipo: 'Travel ID' };
+  return null;
 }
 // Índice da aba Links: sigla do service center -> { nome, endereço, Maps }
 let LINK_INDEX = {};
@@ -346,6 +359,20 @@ function enrichData(){
     // fallback p/ modo sample (sem células posicionais)
     if(d.horarioMax == null && d.etaOrigem)  d.horarioMax  = d.etaOrigem;
     if(d.horarioReal === undefined)          d.horarioReal = d.etaBipagem || null;
+    // Enriquece pela BASE: a aba ETA às vezes vem com #N/A (quando a linha só tem Travel ID).
+    // Busca na Base por Protocolo OU Travel ID e preenche o que faltar (não fica refém do #N/A).
+    const eb = baseForId(d.protocolo);
+    if(eb){
+      const b = eb.row;
+      if(isNA(d.rota))    d.rota    = b.servico || d.rota;
+      if(isNA(d.origem))  d.origem  = b.origem  || d.origem;
+      if(isNA(d.destino)) d.destino = b.destino || d.destino;
+      // horários de chegada na origem: se a aba ETA não trouxe, usa a Base (Origem ETA/ATA)
+      if(!d.horarioMax  && b.origemETA) d.horarioMax  = parseDateBR(b.origemETA);
+      if(!d.horarioReal && b.origemATA) d.horarioReal = parseDateBR(b.origemATA);
+    }
+    // limpa "#N/A" das colunas de exibição (mostra vazio em vez do erro)
+    ['rota','motorista','placa','origem','destino'].forEach(k => { if(isNA(d[k])) d[k] = ''; });
     let cls = 'cinza', txt = 'Aguardando chegada';
     d.atrasoMin = null;
     if(d.horarioReal && d.horarioMax){
@@ -723,7 +750,11 @@ function docCell(d){
 function protoTd(proto){
   const p = String(proto||'').trim();
   if(!p || p === '0') return `<td><span class="ocor-empty">—</span></td>`;
-  return `<td><span class="mono">${escapeHtml(p)}</span> <span class="id-tag id-proto">Protocolo</span></td>`;
+  // Descobre o tipo pela Base: Protocolo (Rostering) ou Travel ID (Route). Default = Protocolo.
+  const info = baseForId(p);
+  const tipo = info ? info.tipo : 'Protocolo';
+  const cls  = tipo === 'Travel ID' ? 'id-travel' : 'id-proto';
+  return `<td><span class="mono">${escapeHtml(p)}</span> <span class="id-tag ${cls}">${tipo}</span></td>`;
 }
 // conteúdo do motivo (ocorrência + causa raiz da Base); vermelho se atrasado/possível atraso
 function motivoInner(d){
@@ -2728,7 +2759,11 @@ function mapBaseRow(row){
   return {
     protocolo: cell(row,'B'),   // Rostering ID — chave de comunicação
     routeId:   cell(row,'A'),   // Route ID — reserva
-    servico:   cell(row,'C'),
+    servico:   cell(row,'C'),   // nomenclatura
+    origem:    cell(row,'O'),   // origem
+    destino:   cell(row,'X'),   // destino
+    origemETA: cell(row,'P'),   // deveria chegar na origem (ETA)
+    origemATA: cell(row,'Q'),   // chegou de verdade na origem (ATA)
     origemETD: cell(row,'S'),   // horário de saída PROGRAMADO da origem (deveria sair)
     origemATD: cell(row,'T'),   // horário real que saiu da origem
     estado:    cell(row,'AM'),  // Pendente = ainda não iniciou
