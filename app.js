@@ -2577,7 +2577,7 @@ function mapEtaRow(row){
   const x = indexRow(row);
   const classeTexto = pick(x, ['classificacao texto','classificacao','status ots classificacao','semaforo','farol','classe']);
   return {
-    protocolo:  pick(x, ['protocolo','protocolo meli','id','tracking id']),
+    protocolo:  cell(row,'A') || pick(x, ['protocolo','protocolo meli','id','tracking id']),   // A = Protocolo (posição)
     rota:       pick(x, ['rota','rota meli','servico','service']),
     motorista:  pick(x, ['motorista','condutor','driver']),
     placa:      pick(x, ['placa','placa cavalo','placa trator','plate']),

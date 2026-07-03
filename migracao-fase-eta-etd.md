@@ -16,11 +16,11 @@ Deve aparecer "Success". Pronto.
 
 ## 2) O que muda no fluxo
 
-- O Apps Script atualizado (`historico-supabase-apps-script.gs.txt`) passa a enviar **dois tipos de registro**:
-  - **ETD** (viagem) — vindos da aba **Base**, como já era, agora marcados com `fase = 'ETD'`.
-  - **ETA** (chegada) — vindos da aba **ETA**, as chegadas já realizadas (com horário real preenchido), marcados com `fase = 'ETA'`.
+- O Apps Script atualizado (`historico-supabase-apps-script.gs.txt`) lê **tudo da aba Base** (fonte central) e envia **dois tipos de registro**:
+  - **ETD** (viagem) — FINALIZADAS/CANCELADAS, `fase = 'ETD'`. Como já era.
+  - **ETA** (chegada na origem) — quando a **Origem ATA (Q)** está preenchida (chegou), comparada com a **Origem ETA (P)** (deveria chegar): no prazo se chegou antes, senão atrasado. `fase = 'ETA'`.
 - No painel, a aba **Relatórios** ganhou o filtro **Fase: ETD · Viagem / ETA · Chegada**, que funciona junto com o filtro **Operação: Line Haul / XPT**.
-- **Não duplica:** o upsert usa a `chave`. ETD usa `protocolo|trecho` (como antes). ETA usa `protocolo|data|ETA` — namespaces diferentes, nunca colidem. Rodar de novo só **sobrepõe/atualiza** os mesmos registros e adiciona os novos.
+- **Não duplica:** o upsert usa a `chave`. ETD usa `protocolo|trecho` (como antes). ETA usa `protocolo|trecho|ETA` — namespaces diferentes, nunca colidem. Rodar de novo só **sobrepõe/atualiza** os mesmos registros e adiciona os novos.
 
 ## 3) Frequência
 
