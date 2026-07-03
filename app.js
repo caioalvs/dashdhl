@@ -131,8 +131,12 @@ function buildMultiSelect(container, values){
       ${msCountBadge(tab,key)}
       <span class="ms-caret">▾</span>
     </button>
-    <div class="ms-pop">${opts || '<div class="empty-state" style="padding:16px">Sem opções</div>'}
-      <button class="ms-clear" type="button">Limpar “${escapeHtml(cap)}”</button>
+    <div class="ms-pop">
+      <div class="ms-tools">
+        <button class="ms-all" type="button">Marcar todos</button>
+        <button class="ms-clear" type="button">Limpar</button>
+      </div>
+      ${opts || '<div class="empty-state" style="padding:16px">Sem opções</div>'}
     </div>`;
   // eventos
   const btn = container.querySelector('.ms-btn');
@@ -144,6 +148,9 @@ function buildMultiSelect(container, values){
       else { const i = arr.indexOf(inp.value); if(i>=0) arr.splice(i,1); }
       onFilterChange(tab);
     });
+  });
+  container.querySelector('.ms-all').addEventListener('click', e => {
+    e.stopPropagation(); filters[tab][key] = [...values]; onFilterChange(tab);
   });
   container.querySelector('.ms-clear').addEventListener('click', e => {
     e.stopPropagation(); filters[tab][key] = []; onFilterChange(tab);
@@ -531,10 +538,16 @@ function renderEtdKpis(rows){
 /* ----------------------------------------------------------------------- */
 /* Tabelas                                                                  */
 /* ----------------------------------------------------------------------- */
+// célula da 2ª bipagem (col H): mostra horário se for data, senão o texto; "—" se vazio
+function segBipTxt(v){
+  if(!v || !String(v).trim()) return '<span class="ocor-empty">—</span>';
+  const p = parseDateBR(v);
+  return p ? fmtDateTime(p) : escapeHtml(v);
+}
 function renderEtaTable(rows){
   const tb = $('#eta-tbody');
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="11"><div class="empty-state">Nenhuma rota corresponde aos filtros.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="12"><div class="empty-state">Nenhuma rota corresponde aos filtros.</div></td></tr>`;
   } else {
     const ord = { vermelho:0, cinza:1, verde:2 };  // críticos (atrasados) no topo
     rows = [...rows].sort((a,b) => (ord[a.classificacao]??3) - (ord[b.classificacao]??3));
@@ -546,6 +559,7 @@ function renderEtaTable(rows){
         <td class="mono">${escapeHtml(d.placa)}</td>
         <td>${fmtDateTime(d.horarioMax)}</td>
         <td>${fmtDateTime(d.horarioReal)}</td>
+        <td>${segBipTxt(d.segundaBipagem)}</td>
         <td>${classeBadge(d.classificacao, d.classificacaoTexto)}</td>
         <td>${escapeHtml(d.statusK || d.status || '—')}</td>
         <td>${escapeHtml(d.statusL || '—')}</td>
@@ -2570,6 +2584,7 @@ function mapEtaRow(row){
     // --- por POSIÇÃO de coluna (definido pelo Caio) ---
     horarioMax:  parseDateBR(cell(row,'F')),  // F = horário máximo de chegada
     horarioReal: parseDateBR(cell(row,'G')),  // G = horário real da chegada
+    segundaBipagem: cell(row,'H'),            // H = 2ª bipagem (viagens com 2 pontos de coleta)
     statusK:     cell(row,'K'),               // K = status da rota
     statusL:     cell(row,'L'),               // L = status da rota
     statusViagem: cell(row,'U')               // U = status da viagem
