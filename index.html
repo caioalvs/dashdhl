@@ -705,7 +705,7 @@
 
         <div class="filter-bar" id="eta-filters">
           <div class="ms" data-tab="eta" data-key="classe" data-cap="Resultado"></div>
-          <div class="ms" data-tab="eta" data-key="status" data-cap="Status (K)"></div>
+          <div class="ms" data-tab="eta" data-key="status" data-cap="Status da rota"></div>
           <div class="ms" data-tab="eta" data-key="tipo" data-cap="Tipo"></div>
           <div class="ms" data-tab="eta" data-key="resp" data-cap="Status viagem"></div>
           <input type="text" class="search" id="f-eta-search" placeholder="Buscar protocolo, rota, motorista, placa...">
@@ -719,8 +719,8 @@
             <table>
               <thead><tr>
                 <th>Identificação</th><th>Rota</th><th>Motorista</th><th>Placa</th>
-                <th>Horário máx. (F)</th><th>Chegada real (G)</th><th>2ª bipagem (H)</th><th>Resultado</th>
-                <th>Status (K)</th><th>Status (L)</th><th>Status viagem (U)</th><th>Ocorrência / Motivo</th>
+                <th>Horário máximo</th><th>Chegada real</th><th>2ª bipagem</th><th>Resultado</th>
+                <th>Status da rota</th><th>Status SM</th><th>Status da viagem</th><th>Ocorrência / Motivo</th>
               </tr></thead>
               <tbody id="eta-tbody"></tbody>
             </table>
@@ -762,7 +762,7 @@
           <div class="kpi-card k-grey clickable" data-kpi-tab="etd" data-kpi-key="parados" data-kpi-val="1">
             <div class="kpi-label">Parados</div>
             <div class="kpi-value tabular" id="etd-kpi-parados">0</div>
-            <div class="kpi-sub">Status SM = parado (coluna L)</div>
+            <div class="kpi-sub">Veículo parado segundo a SM</div>
           </div>
           <div class="kpi-card k-amber clickable" data-kpi-tab="etd" data-kpi-key="posto" data-kpi-val="1">
             <div class="kpi-label">Posto fiscal</div>
@@ -778,7 +778,7 @@
 
         <div class="chart-row-small">
           <div class="panel">
-            <h3>Termômetro de risco da frota <span class="hint">coluna Q</span></h3>
+            <h3>Termômetro de risco da frota <span class="hint">por km/h médio necessário</span></h3>
             <div class="chart-box-sm"><canvas id="chartEtdBuckets"></canvas></div>
           </div>
           <div class="panel">
@@ -789,7 +789,7 @@
 
         <div class="filter-bar" id="etd-filters">
           <div class="ms" data-tab="etd" data-key="banda" data-cap="Faixa de risco"></div>
-          <div class="ms" data-tab="etd" data-key="status" data-cap="Status SM (L)"></div>
+          <div class="ms" data-tab="etd" data-key="status" data-cap="Status SM"></div>
           <div class="ms" data-tab="etd" data-key="tipo" data-cap="Tipo"></div>
           <div class="ms" data-tab="etd" data-key="destino" data-cap="Destino"></div>
           <input type="text" class="search" id="f-etd-search" placeholder="Buscar protocolo, placa, posição...">
@@ -802,30 +802,30 @@
         <div class="table-wrap">
           <div class="table-head-bar th-verde"><span class="dot"></span> No prazo — km/h médio necessário até 46<span class="cnt"><b id="etd-cnt-verde">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h méd. (Q)</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h médio</th><th>Desloc. 1h</th><th>Velocidade</th><th>Status SM</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
             <tbody id="etd-tbody-verde"></tbody>
           </table></div>
         </div>
         <div class="table-wrap">
           <div class="table-head-bar th-amarelo"><span class="dot"></span> Risco — km/h médio necessário entre 47 e 55<span class="cnt"><b id="etd-cnt-amarelo">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h méd. (Q)</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h médio</th><th>Desloc. 1h</th><th>Velocidade</th><th>Status SM</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
             <tbody id="etd-tbody-amarelo"></tbody>
           </table></div>
         </div>
         <div class="table-wrap">
           <div class="table-head-bar th-vermelho"><span class="dot"></span> Possível atraso — km/h médio &gt;55 ou negativo (cálculo estourou, já atrasando)<span class="cnt"><b id="etd-cnt-vermelho">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h méd. (Q)</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h médio</th><th>Desloc. 1h</th><th>Velocidade</th><th>Status SM</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
             <tbody id="etd-tbody-vermelho"></tbody>
           </table></div>
         </div>
 
         <!-- rotas que ainda não saíram da origem (Base: Pendente) -->
         <div class="table-wrap">
-          <div class="table-head-bar th-grey"><span class="dot"></span> Aguardando início — ainda não saíram da origem (Base: Pendente) <span class="cnt"><b id="etd-cnt-aguard">0</b> rotas</span></div>
+          <div class="table-head-bar th-grey"><span class="dot"></span> Aguardando início — ainda não saíram da origem <span class="cnt"><b id="etd-cnt-aguard">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>CPT (D)</th><th>Horário destino</th><th>Estado (Base)</th><th>Status SM (L)</th><th>Ocorrência</th><th>Pacotes</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>CPT</th><th>Horário destino</th><th>Estado</th><th>Status SM</th><th>Ocorrência</th><th>Pacotes</th></tr></thead>
             <tbody id="etd-tbody-aguard"></tbody>
           </table></div>
         </div>
@@ -834,7 +834,7 @@
         <div class="table-wrap">
           <div class="table-head-bar th-grey"><span class="dot"></span> Reversas — agrupadas à parte (com pacote no topo) <span class="cnt"><b id="etd-cnt-nao">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Km Faltante</th><th>Desloc. 1h (R)</th><th>Vel. (S)</th><th>Status SM (L)</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência (sistema)</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Km Faltante</th><th>Desloc. 1h</th><th>Velocidade</th><th>Status SM</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
             <tbody id="etd-tbody-nao"></tbody>
           </table></div>
         </div>
@@ -843,7 +843,7 @@
         <div class="table-wrap">
           <div class="table-head-bar"><span class="dot" style="background:var(--ml-blue)"></span> Posto fiscal — veículos com excepcionalidade a acompanhar <span class="cnt"><b id="etd-cnt-posto">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h méd. (Q)</th><th>Situação (U)</th><th>Km até o posto (V)</th><th>Status SM (L)</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h médio</th><th>Situação</th><th>Km até o posto</th><th>Status SM</th></tr></thead>
             <tbody id="etd-tbody-posto"></tbody>
           </table></div>
         </div>
@@ -862,7 +862,7 @@
           <div class="result-count"><b id="xpt-count">0</b> checkpoints</div>
         </div>
         <div class="table-wrap"><div class="table-scroll"><table>
-          <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Motorista</th><th>CPT previsto (F)</th><th>Bipagem CPT (G)</th><th>Status</th><th>Pacotes</th><th>DOC</th><th>Performance</th><th>Pontuação</th></tr></thead>
+          <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Motorista</th><th>CPT previsto</th><th>Bipagem CPT</th><th>Status</th><th>Pacotes</th><th>DOC</th><th>Performance</th><th>Pontuação</th></tr></thead>
           <tbody id="xpt-tbody"></tbody>
         </table></div></div>
       </section>
@@ -879,7 +879,7 @@
           <div class="result-count"><b id="val-count">0</b> rotas</div>
         </div>
         <div class="table-wrap"><div class="table-scroll"><table>
-          <thead><tr><th>Identificação</th><th>Serviço</th><th>Placas</th><th>Saída prog. (origem)</th><th>Estado (Base)</th><th>Status Portal (H)</th><th>Divergência (O)</th><th>Ocorrência</th></tr></thead>
+          <thead><tr><th>Identificação</th><th>Serviço</th><th>Placas</th><th>Saída programada</th><th>Estado</th><th>Status do portal</th><th>Divergência</th><th>Ocorrência</th></tr></thead>
           <tbody id="val-tbody"></tbody>
         </table></div></div>
       </section>

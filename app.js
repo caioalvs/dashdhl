@@ -1717,19 +1717,19 @@ function openDetail(proto){
   if(eta){
     html += `<div class="dt-sec">Chegada · ETA</div>`
       + dtField('Resultado', eta.classificacaoTexto) + dtField('Horário máximo', fmtDateTime(eta.horarioMax))
-      + dtField('Chegada real', fmtDateTime(eta.horarioReal)) + dtField('Status (K)', eta.statusK)
-      + dtField('Status (L)', eta.statusL) + dtField('Status viagem (U)', eta.statusViagem)
+      + dtField('Chegada real', fmtDateTime(eta.horarioReal)) + dtField('Status da rota', eta.statusK)
+      + dtField('Status SM', eta.statusL) + dtField('Status da viagem', eta.statusViagem)
       + dtField('Motorista', eta.motorista) + dtField('Placa', eta.placa);
   }
   if(etd){
     html += `<div class="dt-sec">Em viagem · ETD</div>`
       + dtField('Destino', etd.destino) + dtField('Nomenclatura', etd.rota) + dtField('Placa', etd.placa)
       + dtField('ETA destino', fmtDateTime(etd.etaDestino)) + dtField('Faixa', etd.riscoTexto)
-      + dtField('Km/h médio nec. (Q)', etd.kmMedio!=null ? etd.kmMedio+' km/h' : '')
+      + dtField('Km/h médio necessário', etd.kmMedio!=null ? etd.kmMedio+' km/h' : '')
       + dtField('Km faltante', etd.kmFaltante!=null ? etd.kmFaltante+' km' : '')
-      + dtField('Desloc. última 1h (R)', etd.deslocHora!=null ? etd.deslocHora+' km' : '')
-      + dtField('Velocidade (S)', etd.velocidadeAtual!=null ? etd.velocidadeAtual+' km/h' : '')
-      + dtField('Status SM (L)', etd.statusSM)
+      + dtField('Deslocamento na última hora', etd.deslocHora!=null ? etd.deslocHora+' km' : '')
+      + dtField('Velocidade', etd.velocidadeAtual!=null ? etd.velocidadeAtual+' km/h' : '')
+      + dtField('Status SM', etd.statusSM)
       + dtField('Pacotes', etd.pacotes!=null ? etd.pacotes.toLocaleString('pt-BR') : '')
       + (etd.postoFiscal ? dtField('Posto fiscal', etd.postoSituacao + (etd.postoKm!=null?` · ${etd.postoKm} km`:'')) : '')
       + (etd.ocorrencia ? dtField('Ocorrência', etd.ocorrencia) : '');
@@ -2109,8 +2109,8 @@ function exportEtdCsv(){
   const cols = [
     {label:'Protocolo', get:d=>d.protocolo}, {label:'Nomenclatura', get:d=>d.rota}, {label:'Placa', get:d=>d.placa},
     {label:'Destino', get:d=>d.destino}, {label:'ETA destino', get:d=>fmtDateTime(d.etaDestino)}, {label:'Km faltante', get:d=>d.kmFaltante},
-    {label:'Km/h medio (Q)', get:d=>d.kmMedio}, {label:'Faixa', get:d=>d.riscoTexto}, {label:'Desloc 1h (R)', get:d=>d.deslocHora},
-    {label:'Velocidade (S)', get:d=>d.velocidadeAtual}, {label:'Status SM (L)', get:d=>d.statusSM}, {label:'Posto fiscal', get:d=>d.postoSituacao},
+    {label:'Km/h medio', get:d=>d.kmMedio}, {label:'Faixa', get:d=>d.riscoTexto}, {label:'Desloc 1h', get:d=>d.deslocHora},
+    {label:'Velocidade', get:d=>d.velocidadeAtual}, {label:'Status SM', get:d=>d.statusSM}, {label:'Posto fiscal', get:d=>d.postoSituacao},
     {label:'Ocorrencia', get:d=>d.ocorrencia}
   ];
   downloadCsv(`etd_${csvStamp()}.csv`, toCsv(cols, getEtdFiltered()));
