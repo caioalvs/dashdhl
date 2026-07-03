@@ -1,23 +1,26 @@
 /**
- * ENVIA O HISTÓRICO DE VIAGENS PRA O SUPABASE.
+ * ENVIA O HISTÓRICO DE VIAGENS PRA O SUPABASE (ETD + ETA).
  *
- * Lê a aba Base, pega as viagens FINALIZADAS e manda pro Supabase (tabela
- * viagens_historico). Não duplica: usa o Rostering ID como chave (upsert).
- * Roda sozinho todo dia. Na 1ª execução já sobem os ~13 dias que a Base tem.
+ * - ETD (viagem): lê a aba **Base**, pega FINALIZADAS e CANCELADAS → fase = 'ETD'.
+ * - ETA (chegada): lê a aba **ETA**, pega as chegadas já realizadas (horário real
+ *   preenchido) → fase = 'ETA'.
+ * Manda tudo pro Supabase (tabela viagens_historico). Não duplica: usa upsert por
+ * `chave`. ETD: protocolo|trecho. ETA: protocolo|data|ETA (namespaces separados).
+ * Roda sozinho a cada 30 min. Na 1ª execução já sobem os dias que as abas têm.
  *
  * COMO USAR (uma vez):
- *  1) Planilha → Extensões → Apps Script (pode ser no mesmo projeto dos outros).
- *  2) Cole este código.
+ *  1) Rode antes o SQL de `migracao-fase-eta-etd.md` (cria a coluna `fase`).
+ *  2) Planilha → Extensões → Apps Script. Cole este código (substitui o anterior).
  *  3) Em SUPA_SERVICE_KEY, cole a sua chave **service_role** (a "secret").
- *     Pega em: Supabase → Project Settings → API → Project API keys → service_role → Reveal.
  *     ⚠️ Essa chave fica SÓ aqui no script. Nunca no painel, nunca no chat.
- *  4) Confira NOME_ABA_BASE.
+ *  4) Confira NOME_ABA_BASE e NOME_ABA_ETA (nomes exatos das abas).
  *  5) Rode "enviarHistoricoSupabase" uma vez (autorize). Depois "agendarHistoricoSupabase".
  */
 
 var SUPA_URL = 'https://dvbezzmfnvbpumnwrqhj.supabase.co';
 var SUPA_SERVICE_KEY = 'COLE_AQUI_SUA_CHAVE_service_role';   // <-- secret, só aqui
 var NOME_ABA_BASE = 'Base';
+var NOME_ABA_ETA  = 'ETA';   // <-- confira o nome exato da aba de chegadas (ETA)
 
 // Colunas da Base (1-indexado)
 var C = {
@@ -26,29 +29,65 @@ var C = {
   estado: 39, substatus: 40, pacotes: 37, motivoCancel: 42, causaRaiz: 43
 };
 
-function enviarHistoricoSupabase() {
-  var base = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(NOME_ABA_BASE);
-  if (!base) { SpreadsheetApp.getUi().alert('Aba "' + NOME_ABA_BASE + '" não encontrada.'); return; }
+// Colunas da ETA por POSIÇÃO (iguais às que o painel usa): F = horário máximo de
+// chegada, G = horário real da chegada. As demais (protocolo/rota/origem/destino/
+// pacotes) são achadas pelo NOME do cabeçalho — tolerante à posição.
+var ETA_POS = { horarioMax: 6, horarioReal: 7 };   // F=6, G=7
+var ETA_HEADERS = {
+  protocolo: ['protocolo','protocolo meli','id','tracking id'],
+  servico:   ['rota','rota meli','servico','service','nomenclatura'],
+  origem:    ['origem','local origem','base origem','from'],
+  destino:   ['destino','local destino','base destino','to'],
+  pacotes:   ['pacotes','qtd pacotes','volumes','hus']
+};
 
-  var dados = base.getDataRange().getValues();
-  // Chave = protocolo + trecho (uma viagem multi-trecho tem VÁRIAS linhas, uma por
-  // trecho — todas com o mesmo protocolo). Assim cada trecho é preservado e não
-  // manda a mesma chave 2x no lote. Última ocorrência de cada chave vence.
+function enviarHistoricoSupabase() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
   var mapa = {};
+  coletarETD_(ss, mapa);
+  coletarETA_(ss, mapa);
+
+  var linhas = Object.keys(mapa).map(function (k) { return mapa[k]; });
+  var enviados = 0, erro = '';
+  for (var j = 0; j < linhas.length; j += 500) {   // envia em lotes de 500
+    var lote = linhas.slice(j, j + 500);
+    var resp = UrlFetchApp.fetch(SUPA_URL + '/rest/v1/viagens_historico', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {
+        apikey: SUPA_SERVICE_KEY,
+        Authorization: 'Bearer ' + SUPA_SERVICE_KEY,
+        Prefer: 'resolution=merge-duplicates,return=minimal'   // upsert pela chave
+      },
+      payload: JSON.stringify(lote),
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    if (code >= 200 && code < 300) enviados += lote.length;
+    else { erro = code + ': ' + resp.getContentText(); Logger.log(erro); break; }
+  }
+  var msg = erro ? ('ERRO — ' + erro) : ('Enviados ao Supabase: ' + enviados + ' de ' + linhas.length);
+  ss.toast(msg, erro ? 'Falhou' : 'OK', 10);
+}
+
+/* ---- ETD (aba Base): finalizadas e canceladas ---- */
+function coletarETD_(ss, mapa) {
+  var base = ss.getSheetByName(NOME_ABA_BASE);
+  if (!base) { ss.toast('Aba "' + NOME_ABA_BASE + '" não encontrada.', 'ETD', 8); return; }
+  var dados = base.getDataRange().getValues();
   for (var i = 1; i < dados.length; i++) {
     var r = dados[i];
     var estado = String(r[C.estado - 1] || '').trim().toLowerCase();
-    if (estado !== 'finalizado' && estado !== 'cancelado') continue;   // finalizadas E canceladas
+    if (estado !== 'finalizado' && estado !== 'cancelado') continue;
     var rost = String(r[C.rostering - 1] || '').trim();
     var routeId = String(r[C.routeId - 1] || '').trim();
-    // chave: usa o Rostering ID (Protocolo); se vazio/"0", usa o Route ID (Travel ID).
-    // As faixas de numeração não se sobrepõem, então não precisa de prefixo.
-    var idBase = (rost && rost !== '0') ? rost : routeId;
-    if (!idBase) continue;   // sem protocolo E sem route id → não dá pra chavear
+    var idBase = (rost && rost !== '0') ? rost : routeId;   // protocolo; senão route id
+    if (!idBase) continue;
     var trecho = String(r[C.trecho - 1] || '').trim();
-    var chave = idBase + '|' + trecho;
+    var chave = idBase + '|' + trecho;                      // ETD: protocolo|trecho
     mapa[chave] = {
       chave: chave,
+      fase: 'ETD',
       rostering_id: rost,
       route_id: routeId,
       trecho: trecho,
@@ -66,41 +105,95 @@ function enviarHistoricoSupabase() {
       causa_raiz: txt(r[C.causaRaiz - 1])
     };
   }
-  var linhas = Object.keys(mapa).map(function (k) { return mapa[k]; });
-
-  var enviados = 0, erro = '';
-  for (var j = 0; j < linhas.length; j += 500) {   // envia em lotes de 500
-    var lote = linhas.slice(j, j + 500);
-    var resp = UrlFetchApp.fetch(SUPA_URL + '/rest/v1/viagens_historico', {
-      method: 'post',
-      contentType: 'application/json',
-      headers: {
-        apikey: SUPA_SERVICE_KEY,
-        Authorization: 'Bearer ' + SUPA_SERVICE_KEY,
-        Prefer: 'resolution=merge-duplicates,return=minimal'   // upsert pelo rostering_id
-      },
-      payload: JSON.stringify(lote),
-      muteHttpExceptions: true
-    });
-    var code = resp.getResponseCode();
-    if (code >= 200 && code < 300) enviados += lote.length;
-    else { erro = code + ': ' + resp.getContentText(); Logger.log(erro); break; }
-  }
-  var msg = erro ? ('ERRO — ' + erro) : ('Enviados ao Supabase: ' + enviados + ' de ' + linhas.length);
-  SpreadsheetApp.getActiveSpreadsheet().toast(msg, erro ? 'Falhou' : 'OK', 10);
 }
 
-// Rode UMA vez: agenda o envio DUAS vezes por dia (~07h30 e ~19h30).
+/* ---- ETA (aba ETA): chegadas já realizadas (horário real preenchido) ---- */
+function coletarETA_(ss, mapa) {
+  var aba = ss.getSheetByName(NOME_ABA_ETA);
+  if (!aba) { ss.toast('Aba "' + NOME_ABA_ETA + '" não encontrada.', 'ETA', 8); return; }
+  var dados = aba.getDataRange().getValues();
+  if (dados.length < 2) return;
+  var idx = mapearCabecalho_(dados[0], ETA_HEADERS);   // nome -> índice 0-based
+  for (var i = 1; i < dados.length; i++) {
+    var r = dados[i];
+    var real = r[ETA_POS.horarioReal - 1];   // G = chegada real
+    var max  = r[ETA_POS.horarioMax  - 1];   // F = horário máximo
+    var dReal = parseDT_(real);
+    if (!dReal) continue;                     // sem chegada real → ainda não chegou, pula
+    var proto = String(get_(r, idx.protocolo) || '').trim();
+    if (!proto) continue;
+    var dMax = parseDT_(max);
+    var resultado = (dMax && dReal < dMax) ? 'No prazo' : 'Atrasado';
+    var dataISO = Utilities.formatDate(dReal, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    var chave = proto + '|' + dataISO + '|ETA';   // ETA: protocolo|data|ETA
+    mapa[chave] = {
+      chave: chave,
+      fase: 'ETA',
+      rostering_id: proto,
+      route_id: '',
+      trecho: '',
+      data: dataISO,
+      servico: txt(get_(r, idx.servico)),
+      origem: txt(get_(r, idx.origem)),
+      destino: txt(get_(r, idx.destino)),
+      saida_programada: fmtDT_(dMax),     // referência: horário máximo de chegada
+      saida_real: '',
+      chegada: fmtDT_(dReal),             // chegada real na origem
+      estado: 'Finalizado',
+      resultado: resultado,
+      pacotes: paraInt(get_(r, idx.pacotes)),
+      motivo_cancelamento: null,
+      causa_raiz: null
+    };
+  }
+}
+
+// Roda UMA vez: agenda o envio A CADA 30 MINUTOS (mantém o Relatório fresco).
 function agendarHistoricoSupabase() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'enviarHistoricoSupabase') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('enviarHistoricoSupabase').timeBased().everyDays(1).atHour(7).nearMinute(30).create();
-  ScriptApp.newTrigger('enviarHistoricoSupabase').timeBased().everyDays(1).atHour(19).nearMinute(30).create();
-  SpreadsheetApp.getActiveSpreadsheet().toast('Agendado: envia ao Supabase ~07h30 e ~19h30.', 'OK', 6);
+  ScriptApp.newTrigger('enviarHistoricoSupabase').timeBased().everyMinutes(30).create();
+  SpreadsheetApp.getActiveSpreadsheet().toast('Agendado: envia ao Supabase a cada 30 min.', 'OK', 6);
 }
 
 /* ---- helpers ---- */
+function mapearCabecalho_(headerRow, aliasesPorCampo) {
+  var norm = headerRow.map(function (h) { return normalizar_(h); });
+  var out = {};
+  Object.keys(aliasesPorCampo).forEach(function (campo) {
+    out[campo] = -1;
+    var aliases = aliasesPorCampo[campo];
+    for (var a = 0; a < aliases.length; a++) {
+      var alvo = normalizar_(aliases[a]);
+      var pos = norm.indexOf(alvo);
+      if (pos >= 0) { out[campo] = pos; break; }
+    }
+  });
+  return out;
+}
+function get_(row, idx) { return (idx != null && idx >= 0) ? row[idx] : null; }
+function normalizar_(s) {
+  return String(s || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')   // tira acento
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function parseDT_(v) {
+  if (v instanceof Date) return v;
+  var s = String(v || '').trim();
+  if (!s) return null;
+  var m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:[ T](\d{1,2}):(\d{2}))?/);
+  if (m) {
+    var y = +m[3]; if (y < 100) y += 2000;
+    return new Date(y, (+m[2]) - 1, +m[1], m[4] ? +m[4] : 0, m[5] ? +m[5] : 0);
+  }
+  var d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+function fmtDT_(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return null;
+  return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+}
 function txt(v) {
   if (v == null || v === '') return null;
   if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');

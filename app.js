@@ -1221,23 +1221,23 @@ function renderOfensores(){
       <span class="badge ${o.cls}"><span class="badge-dot"></span>${escapeHtml(o.status)}</span>
     </div>`).join('');
 }
+// Atrasos por destino, separados por fonte: ETA (chegada) e ETD (viagem).
+// Cada um vira uma tabela clicável (clique num destino filtra os ofensores abaixo).
 function renderGestaoDest(){
-  const cv = $('#chart-gestao-dest'); if(!cv || typeof Chart==='undefined') return;
   const ofen = buildOfensores();
-  const by = {};
-  ofen.forEach(o => { const k = destKey(o.destino); by[k] = (by[k]||0)+1; });
-  const pairs = Object.entries(by).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  destroyChart('gestaoDest');
-  charts.gestaoDest = new Chart(cv, {
-    type:'bar',
-    data:{ labels:pairs.map(p=>p[0]), datasets:[{ data:pairs.map(p=>p[1]),
-      backgroundColor:pairs.map(p=>p[0]===gestaoDestSel?PALETTE.red:'rgba(212,5,17,.55)'), borderRadius:4, borderWidth:0 }] },
-    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      onClick:(evt, els) => { if(els && els.length){ const lbl = pairs[els[0].index][0]; gestaoDestSel = (gestaoDestSel===lbl?null:lbl); renderGestaoDest(); renderOfensores(); } },
-      onHover:(evt, els) => { if(evt.native && evt.native.target) evt.native.target.style.cursor = els.length?'pointer':'default'; },
-      scales:{ x:{ beginAtZero:true, ticks:{ precision:0 } } },
-      plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:(c)=>`${c.parsed.x} rota(s) · clique para filtrar` } } } }
-  });
+  const fill = (arr, tbodyId) => {
+    const tb = $('#'+tbodyId); if(!tb) return;
+    const by = {};
+    arr.forEach(o => { const k = destKey(o.destino); by[k] = (by[k]||0)+1; });
+    const pairs = Object.entries(by).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    tb.innerHTML = pairs.length ? pairs.map(([dest,n])=>`
+      <tr class="gx-dest-row${gestaoDestSel===dest?' sel':''}" data-dest="${escapeHtml(dest)}">
+        <td>${escapeHtml(dest)}</td>
+        <td style="text-align:right"><b class="mono">${n}</b></td>
+      </tr>`).join('') : `<tr><td colspan="2"><div class="empty-state" style="padding:14px 8px">Sem atrasos.</div></td></tr>`;
+  };
+  fill(ofen.filter(o => o.fonte === 'ETA'), 'gestao-dest-eta');
+  fill(ofen.filter(o => o.fonte === 'ETD'), 'gestao-dest-etd');
 }
 // Tendência da GESTÃO agora vem do HISTÓRICO REAL (Supabase): pontualidade por dia,
 // últimos 14 dias. Fica em cache; recarrega ao abrir a aba (não a cada renderAll).
@@ -1275,6 +1275,11 @@ function relTipoMatch(r){
   const isXpt = /xpt/i.test(r.servico||'');
   return _relTipoOp === 'xpt' ? isXpt : !isXpt;
 }
+let _relFase = 'etd';           // ETD/viagem (padrão) × ETA/chegada — dentro de LH/XPT
+function relFaseMatch(r){
+  const f = String(r.fase || 'ETD').toUpperCase();   // registros antigos (sem fase) = ETD
+  return _relFase === 'eta' ? (f === 'ETA') : (f !== 'ETA');
+}
 let _relStart = '', _relEnd = '';
 let _relCancMotivo = null;      // filtro do painel de cancelamentos
 let _relAtrasoTipo = null;      // filtro de tipo no painel de atrasos
@@ -1295,7 +1300,7 @@ function relIdCell(r){
 }
 async function fetchHistorico(startISO, endISO){
   if(!SUPABASE.url || !SUPABASE.anon) return { ok:false, rows:[] };
-  const cols = 'rostering_id,route_id,servico,estado,resultado,pacotes,chegada,saida_programada,causa_raiz,origem,destino,motivo_cancelamento,trecho,data';
+  const cols = 'rostering_id,route_id,servico,estado,resultado,pacotes,chegada,saida_programada,causa_raiz,origem,destino,motivo_cancelamento,trecho,data,fase';
   const q = `${SUPABASE.url}/rest/v1/viagens_historico?select=${cols}&data=gte.${startISO}&data=lte.${endISO}&order=data.asc`;
   const headers = { apikey: SUPABASE.anon, Authorization: 'Bearer ' + SUPABASE.anon };
   let all = [], offset = 0; const page = 1000;
@@ -1334,8 +1339,8 @@ async function renderRelatorios(){
     const k = $('#rel-kpis'); if(k) k.innerHTML = `<div class="empty-state" style="padding:36px;grid-column:1/-1">Não consegui ler o histórico agora${res.err?` (erro ${res.err})`:''}. Recarregue em instantes.</div>`;
     return;
   }
-  _relData.fin  = res.rows.filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r));
-  _relData.canc = res.rows.filter(r => /cancel/i.test(r.estado||'') && relTipoMatch(r));
+  _relData.fin  = res.rows.filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r) && relFaseMatch(r));
+  _relData.canc = res.rows.filter(r => /cancel/i.test(r.estado||'') && relTipoMatch(r) && relFaseMatch(r));
   _relCancMotivo = null; _relAtrasoTipo = null;
   _relRowSeq = 0; for(const kk in _relRowMap) delete _relRowMap[kk];
   renderRelResumo();
@@ -1631,6 +1636,13 @@ function bindRelatorios(){
     _relCancMotivo = null; _relAtrasoTipo = null;
     renderRelatorios();
   }));
+  $$('.rel-fase-btn').forEach(b => b.addEventListener('click', () => {
+    _relFase = b.dataset.fase;
+    $$('.rel-fase-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    _relCancMotivo = null; _relAtrasoTipo = null;
+    renderRelatorios();
+  }));
   $$('.rel-per-btn').forEach(b => b.addEventListener('click', () => {
     _relPeriodo = b.dataset.per;
     $$('.rel-per-btn').forEach(x => x.classList.remove('active'));
@@ -1765,6 +1777,8 @@ function bindRowDetails(){
     if(oclr){ gestaoDestSel = null; renderGestaoDest(); renderOfensores(); return; }
     const ofr = e.target.closest('.ofen-row');
     if(ofr){ openDetail(ofr.dataset.proto); return; }
+    const gdr = e.target.closest('.gx-dest-row');
+    if(gdr && gdr.dataset.dest){ gestaoDestSel = (gestaoDestSel===gdr.dataset.dest?null:gdr.dataset.dest); renderGestaoDest(); renderOfensores(); return; }
     const gj = e.target.closest('.gx-jump');
     if(gj){ gestaoJump(gj.dataset.jump); return; }
     const tr = e.target.closest('.table-wrap tbody tr');
