@@ -151,6 +151,34 @@
   .ops-stats .os i { width:10px; height:10px; border-radius:3px; display:inline-block; }
   .ops-stats .os b { font-family:var(--font-num); font-weight:700; font-size:18px; color:var(--text); }
 
+  /* ===== MARCA DHL + MOVIMENTO ===== */
+  /* faixa amarela DHL no topo — reforço de marca, chama o olho */
+  .topbar { border-top: 3px solid var(--yellow); }
+
+  /* entrada suave ao trocar de aba */
+  @keyframes viewIn { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform:none; } }
+  section.view-anim { animation: viewIn .30s cubic-bezier(.22,.61,.36,1) both; }
+
+  /* pulso de atenção nos críticos (vermelho DHL) — ribbon em estado crítico e badge de alertas */
+  @keyframes critPulse { 0%,100% { box-shadow:0 0 0 0 rgba(212,5,17,0); } 50% { box-shadow:0 0 0 5px rgba(212,5,17,.16); } }
+  .ops-ribbon.state-vermelho::before { animation: critPulse 1.9s ease-in-out infinite; }
+  .tab-badge.bad { animation: critPulse 1.9s ease-in-out infinite; }
+
+  /* brilho sutil no número crítico do título (hero de cada aba) */
+  .ops-headline .hl-strong { text-shadow: 0 0 18px rgba(212,5,17,.20); }
+
+  /* transições suaves nos elementos interativos + micro-lift nos selos */
+  .badge, .resp-pill, .doc-badge, .id-tag, .kpi-card, .tab-btn, button, .ms-btn,
+  .rel-per-btn, .rel-op-btn, .rel-fase-btn, .gx-dest-row, tr.rel-click {
+    transition: transform .15s ease, box-shadow .15s ease, background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .badge:hover, .resp-pill:hover { transform: translateY(-1px); }
+
+  /* respeita quem prefere menos movimento (acessibilidade) */
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; scroll-behavior:auto !important; }
+  }
+
   /* nav badges sinalizam onde estão os problemas (no trilho) */
   .tab-badge.bad  { background: var(--red) !important; color:#fff !important; }
   .tab-badge.warn { background: var(--amber) !important; color:#3a2600 !important; }

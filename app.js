@@ -2045,6 +2045,9 @@ function bindTabs(){
       ['eta','etd','xpt','validacao','mapa','alertas','gestao','relatorios'].forEach(t=>{
         const v = $('#view-'+t); if(v) v.style.display = (t===tab)?'block':'none';
       });
+      // entrada suave da aba ativa (re-dispara a animação)
+      const av = $('#view-'+tab);
+      if(av){ av.classList.remove('view-anim'); void av.offsetWidth; av.classList.add('view-anim'); }
       // recalcula tamanho dos gráficos da aba aberta
       Object.values(charts).forEach(c=>c.resize());
       // o mapa precisa recalcular tamanho quando a aba fica visível
