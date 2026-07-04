@@ -274,18 +274,29 @@ function buildSmIndex(){
 
 // Índice de Ocorrências: protocolo -> texto da ocorrência (motivo em sistema)
 let OCOR_INDEX = {};
+// tira o "(Cidade)" da sigla do service center, deixando só a sigla compacta (ex.: "BRXSP10 (Guarulhos Ii)" -> "BRXSP10")
+function siglaOnly(s){ return String(s||'').replace(/\s*\(.*?\)\s*/g,' ').trim(); }
 function buildOcorIndex(){
   OCOR_INDEX = {};
+  // 1) agrupa por protocolo -> trecho -> lista de ocorrências (sem repetir o rótulo do trecho)
+  const byProto = {};
   (DASHBOARD_DATA.ocorrencias || []).forEach(r => {
     const p = String(r.protocolo || '').trim();
     const o = fixMojibake((r.ocorrencia || '').trim());
     if(!p || !o) return;
-    // amarra a ocorrência ao TRECHO onde o incidente aconteceu (origem→destino da própria ocorrência)
-    const org = (r.oOrigem||'').trim(), dst = (r.oDestino||'').trim();
+    const org = siglaOnly(r.oOrigem), dst = siglaOnly(r.oDestino);
     const trecho = (org || dst) ? `${org||'?'}→${dst||'?'}` : '';
-    const entry = trecho ? `${trecho}: ${o}` : o;
-    if(OCOR_INDEX[p]){ if(!OCOR_INDEX[p].includes(entry)) OCOR_INDEX[p] += ' · ' + entry; }  // junta múltiplas (uma por trecho)
-    else OCOR_INDEX[p] = entry;
+    (byProto[p] = byProto[p] || {});
+    (byProto[p][trecho] = byProto[p][trecho] || []);
+    if(!byProto[p][trecho].includes(o)) byProto[p][trecho].push(o);
+  });
+  // 2) monta o texto final: "TRECHO: ocor1, ocor2 · OUTRO TRECHO: ocor3"
+  Object.keys(byProto).forEach(p => {
+    const trechos = byProto[p];
+    OCOR_INDEX[p] = Object.keys(trechos).map(t => {
+      const ocs = trechos[t].join(', ');
+      return t ? `${t}: ${ocs}` : ocs;
+    }).join(' · ');
   });
 }
 
