@@ -372,7 +372,7 @@ function enrichData(){
       if(!d.horarioReal && b.origemATA) d.horarioReal = parseDateBR(b.origemATA);
     }
     // limpa "#N/A" das colunas de exibição (mostra vazio em vez do erro)
-    ['rota','motorista','placa','origem','destino'].forEach(k => { if(isNA(d[k])) d[k] = ''; });
+    ['rota','motorista','placa','origem','destino','status','statusK','statusL','statusViagem','segundaBipagem'].forEach(k => { if(isNA(d[k])) d[k] = ''; });
     let cls = 'cinza', txt = 'Aguardando chegada';
     d.atrasoMin = null;
     if(d.horarioReal && d.horarioMax){
