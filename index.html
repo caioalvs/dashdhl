@@ -211,6 +211,35 @@
   .rel-fase-btn { background:transparent; border:none; color:var(--text-dim); font-size:12.5px; font-weight:700; padding:7px 18px; border-radius:100px; cursor:pointer; transition:background .12s ease, color .12s ease; }
   .rel-fase-btn:hover { color:var(--text); }
   .rel-fase-btn.active { background:var(--yellow); color:#5d4a00; box-shadow:0 2px 8px -2px rgba(255,204,0,.55); }
+  .rel-delta { display:inline-flex; align-items:center; gap:2px; font-size:11px; font-weight:800; font-family:var(--font-num); white-space:nowrap; }
+  .rel-delta.good { color:var(--green); } .rel-delta.bad { color:var(--red); }
+  .rel-delta.neu { color:var(--text-dim); } .rel-delta.flat { color:#b0b8c4; }
+  /* calendário de atrasos */
+  .cal-head { display:flex; align-items:center; justify-content:center; gap:16px; margin-bottom:14px; }
+  .cal-title { font-family:var(--font-head); font-weight:700; font-size:15px; color:var(--text); min-width:160px; text-align:center; }
+  .cal-nav { width:32px; height:32px; border-radius:50%; border:1px solid var(--border); background:var(--bg-panel); color:var(--text); font-size:18px; line-height:1; cursor:pointer; transition:background .12s ease, border-color .12s ease; }
+  .cal-nav:hover { background:var(--yellow-soft); border-color:var(--yellow-dim); }
+  .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+  .cal-dow { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--text-dim); text-align:center; padding-bottom:2px; }
+  .cal-day { position:relative; aspect-ratio:1.2; border:1px solid var(--border); border-radius:9px; background:var(--bg-panel-2); display:flex; flex-direction:column; justify-content:space-between; padding:6px 8px; }
+  .cal-day.has { cursor:pointer; border-color:transparent; transition:transform .12s ease, box-shadow .12s ease; }
+  .cal-day.has:hover { transform:translateY(-2px); box-shadow:var(--shadow); }
+  .cal-day.hoje { outline:2px solid var(--yellow); outline-offset:1px; }
+  .cal-num { font-size:12px; font-weight:600; color:var(--text-dim); }
+  .cal-day.has .cal-num { color:inherit; opacity:.9; }
+  .cal-cnt { align-self:flex-end; font-family:var(--font-num); font-weight:800; font-size:17px; line-height:1; }
+  .cal-loading, .cal-foot { font-size:11.5px; color:var(--text-dim); text-align:center; padding:10px; }
+  /* ofensores recorrentes */
+  .rec-wrap { display:flex; flex-direction:column; gap:9px; }
+  .rec-row { display:grid; grid-template-columns: 190px 1fr 130px; gap:12px; align-items:center; cursor:pointer; padding:5px 8px; margin:0 -8px; border-radius:8px; transition:background .12s ease; }
+  .rec-row:hover { background:var(--yellow-soft); }
+  .rec-go { color:var(--text-dim); font-weight:700; font-size:15px; margin-left:2px; }
+  .rec-dest { font-size:12.5px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rec-bar { height:8px; background:var(--bg-panel-2); border-radius:100px; overflow:hidden; }
+  .rec-fill { height:100%; background:linear-gradient(90deg, var(--amber), var(--red)); border-radius:100px; }
+  .rec-meta { display:flex; align-items:center; gap:8px; justify-content:flex-end; }
+  .rec-vol { font-family:var(--font-num); font-size:11.5px; color:var(--text-dim); }
+  @media (max-width:700px){ .rec-row { grid-template-columns:1fr auto; } .rec-bar { display:none; } .cal-grid { gap:4px; } .cal-day { padding:4px 5px; } .cal-cnt { font-size:14px; } }
   .rel-periodos { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; }
   .rel-per-btn { background:var(--bg-panel); border:1px solid var(--border); color:var(--text-dim); font-size:12.5px; font-weight:600; padding:8px 16px; border-radius:100px; cursor:pointer; transition:border-color .12s ease, color .12s ease, background .12s ease; }
   .rel-per-btn:hover { border-color:var(--yellow-dim); color:var(--text); }
@@ -1108,6 +1137,14 @@
             </table></div>
           </div>
         </div>
+        <div class="panel" style="margin-top:18px">
+          <h3>Ofensores recorrentes <span class="hint">destinos com maior taxa de atraso · mín. 5 viagens no período</span></h3>
+          <div id="rel-recorrentes" class="rec-wrap"></div>
+        </div>
+        <div class="panel" style="margin-top:18px">
+          <h3>Calendário de atrasos <span class="hint">navegue pelos meses · clique num dia pra ver as rotas</span></h3>
+          <div id="rel-calendar" class="cal-wrap"></div>
+        </div>
       </section>
 
     </main>
@@ -1126,6 +1163,6 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=1"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

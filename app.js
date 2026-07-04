@@ -1358,6 +1358,40 @@ function relRange(key){
 function _horaDe(s){ const m = String(s||'').match(/[ T](\d{1,2}):(\d{2})/); return m ? +m[1] : null; }
 function _minDe(s){ const m = String(s||'').match(/[ T](\d{1,2}):(\d{2})/); return m ? (+m[1]*60 + +m[2]) : null; }
 
+/* ---- Comparativo de período: mesmo intervalo imediatamente anterior ---- */
+let _relPrev = null;
+function relPrevRange(start, end){
+  const s = new Date(start+'T00:00:00'), e = new Date(end+'T00:00:00');
+  const dur = Math.max(0, Math.round((e - s)/86400000));   // duração em dias
+  const pe = new Date(s); pe.setDate(s.getDate()-1);        // dia anterior ao início
+  const ps = new Date(pe); ps.setDate(pe.getDate()-dur);    // recua a mesma duração
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return { start: fmt(ps), end: fmt(pe) };
+}
+function computeRelKpis(rows){
+  const fin  = rows.filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r) && relFaseMatch(r));
+  const canc = rows.filter(r => /cancel/i.test(r.estado||'') && relTipoMatch(r) && relFaseMatch(r));
+  const total = fin.length;
+  const noPrazo = fin.filter(r => /no prazo/i.test(r.resultado||'')).length;
+  const atraso  = fin.filter(r => /atrasad/i.test(r.resultado||'')).length;
+  const pacotes = fin.reduce((s,r)=>s+(parseInt(r.pacotes,10)||0),0);
+  const infrut  = canc.filter(r => /infrut/i.test(r.motivo_cancelamento||'')).length;
+  return { total, noPrazo, pct: total?Math.round(noPrazo/total*100):0, atraso, pacotes, canc: canc.length, infrut };
+}
+// Selo ▲▼ do comparativo. opts: pp (pontos %), goodUp (subir é bom), neutral (sem cor de bom/ruim)
+function relDelta(cur, prev, opts){
+  opts = opts || {};
+  if(prev == null) return '';
+  let diff, txt;
+  if(opts.pp){ diff = cur - prev; txt = Math.abs(diff)+' pp'; }
+  else if(prev === 0){ return cur > 0 ? `<span class="rel-delta neu" title="período anterior sem registros">novo</span>` : ''; }
+  else { diff = Math.round((cur-prev)/prev*100); txt = Math.abs(diff)+'%'; }
+  if(diff === 0) return `<span class="rel-delta flat" title="igual ao período anterior">■ 0</span>`;
+  const up = diff > 0;
+  const cls = opts.neutral ? 'neu' : ((opts.goodUp ? up : !up) ? 'good' : 'bad');
+  return `<span class="rel-delta ${cls}" title="vs período anterior">${up?'▲':'▼'} ${txt}</span>`;
+}
+
 async function renderRelatorios(){
   const st = $('#rel-status');
   const { start, end } = relRangeEfetivo();
@@ -1374,10 +1408,15 @@ async function renderRelatorios(){
   _relData.canc = res.rows.filter(r => /cancel/i.test(r.estado||'') && relTipoMatch(r) && relFaseMatch(r));
   _relCancMotivo = null; _relAtrasoTipo = null;
   _relRowSeq = 0; for(const kk in _relRowMap) delete _relRowMap[kk];
+  // período anterior (comparativo ▲▼) — não bloqueia se falhar
+  _relPrev = null;
+  try { const pr = relPrevRange(start, end); const rp = await fetchHistorico(pr.start, pr.end); if(rp.ok) _relPrev = computeRelKpis(rp.rows); } catch(e){}
   renderRelResumo();
   renderRelCancelamentos();
   renderRelAtrasos();
   renderRelDestinos();
+  renderRelRecorrentes();
+  renderRelCalendar();
 }
 // ocorrência em sistema (aba Ocorrências) pelo protocolo; senão a causa raiz do histórico
 function relJustificativa(r){
@@ -1398,15 +1437,16 @@ function renderRelResumo(){
   const taxaCanc = prog ? Math.round(canc.length/prog*100) : 0;
   const mediaPac = total ? Math.round(pacotes/total) : 0;
   const st = $('#rel-status'); if(st) st.textContent = `${total.toLocaleString('pt-BR')} finalizadas · ${canc.length.toLocaleString('pt-BR')} canceladas`;
+  const P = _relPrev;
   const k = $('#rel-kpis');
   if(k) k.innerHTML = [
-    ['k-total','Finalizadas', total.toLocaleString('pt-BR'), '', 'pont'],
-    ['k-green','Pontualidade', pct+'%', `${noPrazo.toLocaleString('pt-BR')} no prazo`, 'pont'],
-    ['k-red','Atrasadas', atraso.toLocaleString('pt-BR'), total?Math.round(atraso/total*100)+'% das finalizadas':'', 'atraso'],
-    ['k-blue','Pacotes', pacotes.toLocaleString('pt-BR'), `${mediaPac.toLocaleString('pt-BR')}/viagem`, ''],
-    ['k-grey','Canceladas', canc.length.toLocaleString('pt-BR'), taxaCanc+'% do programado', 'canc'],
-    ['k-red','Infrutíferas', infrut.toLocaleString('pt-BR'), canc.length?Math.round(infrut/canc.length*100)+'% dos cancelamentos':'', 'infrut'],
-  ].map(([c,l,v,s,act]) => `<div class="kpi-card ${c} ${act?'clickable':''}"${act?` data-relkpi="${act}"`:''}><div class="kpi-label">${l}</div><div class="kpi-value tabular">${v}</div><div class="kpi-sub">${s}</div>${act?'<span class="rel-kpi-go">ver ›</span>':''}</div>`).join('');
+    ['k-total','Finalizadas', total.toLocaleString('pt-BR'), '', 'pont', (P&&P.total>0)?relDelta(total, P.total, {neutral:true}):''],
+    ['k-green','Pontualidade', pct+'%', `${noPrazo.toLocaleString('pt-BR')} no prazo`, 'pont', (P&&P.total>0)?relDelta(pct, P.pct, {pp:true, goodUp:true}):''],
+    ['k-red','Atrasadas', atraso.toLocaleString('pt-BR'), total?Math.round(atraso/total*100)+'% das finalizadas':'', 'atraso', (P&&P.total>0)?relDelta(atraso, P.atraso, {goodUp:false}):''],
+    ['k-blue','Pacotes', pacotes.toLocaleString('pt-BR'), `${mediaPac.toLocaleString('pt-BR')}/viagem`, '', (P&&P.total>0)?relDelta(pacotes, P.pacotes, {neutral:true}):''],
+    ['k-grey','Canceladas', canc.length.toLocaleString('pt-BR'), taxaCanc+'% do programado', 'canc', (P&&P.total>0)?relDelta(canc.length, P.canc, {goodUp:false}):''],
+    ['k-red','Infrutíferas', infrut.toLocaleString('pt-BR'), canc.length?Math.round(infrut/canc.length*100)+'% dos cancelamentos':'', 'infrut', (P&&P.total>0)?relDelta(infrut, P.infrut, {goodUp:false}):''],
+  ].map(([c,l,v,s,act,d]) => `<div class="kpi-card ${c} ${act?'clickable':''}"${act?` data-relkpi="${act}"`:''}><div class="kpi-label">${l}</div><div class="kpi-value tabular">${v}</div><div class="kpi-sub">${s}${s&&d?' · ':''}${d||''}</div>${act?'<span class="rel-kpi-go">ver ›</span>':''}</div>`).join('');
   const porHora = new Array(24).fill(0);
   fin.forEach(r => { const h = _horaDe(r.chegada); if(h!=null && h>=0 && h<24) porHora[h]++; });
   let dia=0, noite=0;
@@ -1506,6 +1546,97 @@ function renderRelDestinos(){
   const tb = $('#rel-dest-tbody');
   if(tb) tb.innerHTML = top.length ? top.map(([dest,o])=>{ const p=Math.round((o.n-o.at)/o.n*100); const cls=p>=90?'b-verde':(p>=80?'b-amarelo':'b-vermelho'); return `<tr class="rel-click" data-dest="${escapeHtml(dest)}"><td>${escapeHtml(dest)}</td><td class="mono">${o.n}</td><td class="mono">${o.at}</td><td><span class="badge ${cls}"><span class="badge-dot"></span>${p}%</span></td></tr>`; }).join('') : `<tr><td colspan="4"><div class="empty-state">Sem dados.</div></td></tr>`;
 }
+// Item de rota atrasada (identificação + trecho + ocorrência) — usado nos detalhes
+function relAtrasoItem(r){
+  const isRost = r.rostering_id && r.rostering_id !== '0';
+  const id  = isRost ? r.rostering_id : (r.route_id || '—');
+  const tag = isRost ? 'Protocolo' : 'Travel ID';
+  const trecho = (r.trecho||'').trim() || `${r.origem||'?'} → ${r.destino||'?'}`;
+  const oc = relJustificativa(r) || 'Sem ocorrência registrada';
+  return `<div class="dt-atr">
+    <div class="dt-atr-top"><span class="mono">${escapeHtml(id)}</span> <span class="id-tag ${isRost?'id-proto':'id-travel'}">${tag}</span>
+      <span class="dt-atr-nom">${escapeHtml(r.servico||'')}</span></div>
+    <div class="dt-atr-tr">${escapeHtml(trecho)}</div>
+    <div class="dt-atr-oc">${escapeHtml(oc)}</div>
+  </div>`;
+}
+// Calendário de atrasos — navega por mês/ano, cada dia mostra a contagem; clique abre o detalhe do dia
+const MES_NOME = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+let _calY = null, _calM = null;
+let _calData = { byDay: {} };
+function calNav(dir){
+  if(_calY == null){ const n = new Date(); _calY = n.getFullYear(); _calM = n.getMonth(); }
+  _calM += (dir === 'next' ? 1 : -1);
+  if(_calM > 11){ _calM = 0; _calY++; } else if(_calM < 0){ _calM = 11; _calY--; }
+  renderRelCalendar();
+}
+async function renderRelCalendar(){
+  const host = $('#rel-calendar'); if(!host) return;
+  if(_calY == null){ const n = new Date(); _calY = n.getFullYear(); _calM = n.getMonth(); }
+  const mm = String(_calM+1).padStart(2,'0');
+  const lastDay = new Date(_calY, _calM+1, 0).getDate();
+  const mStart = `${_calY}-${mm}-01`, mEnd = `${_calY}-${mm}-${String(lastDay).padStart(2,'0')}`;
+  const navBar = `<div class="cal-head"><button class="cal-nav" data-cal="prev" type="button">‹</button><div class="cal-title">${MES_NOME[_calM]} ${_calY}</div><button class="cal-nav" data-cal="next" type="button">›</button></div>`;
+  host.innerHTML = navBar + `<div class="cal-loading">Carregando…</div>`;
+  const res = await fetchHistorico(mStart, mEnd);
+  const atras = (res.ok ? res.rows : []).filter(r => /finaliz/i.test(r.estado||'') && /atrasad/i.test(r.resultado||'') && relTipoMatch(r) && relFaseMatch(r));
+  const byDay = {};
+  atras.forEach(r => { const d = r.data; if(!d) return; (byDay[d] = byDay[d] || []).push(r); });
+  _calData = { byDay };
+  let max = 0; Object.values(byDay).forEach(a => { if(a.length > max) max = a.length; });
+  const first = new Date(_calY, _calM, 1).getDay();
+  const hoje = new Date(); const isMesAtual = (hoje.getFullYear()===_calY && hoje.getMonth()===_calM);
+  let html = navBar + '<div class="cal-grid">';
+  ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].forEach(d => html += `<div class="cal-dow">${d}</div>`);
+  for(let i=0;i<first;i++) html += '<div class="cal-empty"></div>';
+  for(let day=1; day<=lastDay; day++){
+    const iso = `${_calY}-${mm}-${String(day).padStart(2,'0')}`;
+    const n = (byDay[iso]||[]).length;
+    const a = n ? (0.15 + 0.85*(n/(max||1))) : 0;
+    const strong = n/(max||1) > 0.5;
+    const isHoje = isMesAtual && day===hoje.getDate();
+    const style = n ? `background:rgba(212,5,17,${a.toFixed(2)});color:${strong?'#fff':'#8a2b2b'}` : '';
+    html += `<div class="cal-day${n?' has':''}${isHoje?' hoje':''}" ${n?`data-calday="${iso}" title="${day}/${mm} · ${n} atraso${n!==1?'s':''}"`:''} style="${style}"><span class="cal-num">${day}</span>${n?`<span class="cal-cnt">${n}</span>`:''}</div>`;
+  }
+  html += '</div><div class="cal-foot">Cada dia mostra os atrasos · clique num dia pra ver as rotas</div>';
+  host.innerHTML = html;
+}
+// Detalhe do dia: rotas atrasadas naquele dia (identificação · trecho · ocorrência)
+function openDayDetail(iso){
+  const rows = _calData.byDay[iso] || [];
+  const dataFmt = iso.split('-').reverse().join('/');
+  let html = `<div class="dt-action dt-crit"><span class="dt-action-ttl">Atrasos do dia</span>${rows.length} rota${rows.length!==1?'s':''} atrasada${rows.length!==1?'s':''} em ${dataFmt}</div>`;
+  // agrupa por destino (visão rápida) + lista completa
+  const byDest = {};
+  rows.forEach(r => { const k=(r.destino||'—'); byDest[k]=(byDest[k]||0)+1; });
+  const destTop = Object.entries(byDest).sort((a,b)=>b[1]-a[1]);
+  if(destTop.length) html += `<div class="dt-sec">Destinos afetados</div>` + destTop.map(([k,v]) => dtField(k, v+' atraso'+(v!==1?'s':''))).join('');
+  if(rows.length) html += `<div class="dt-sec">Rotas atrasadas — identificação · trecho · ocorrência</div>` + rows.map(relAtrasoItem).join('');
+  else html += `<div class="empty-state" style="padding:16px">Sem atrasos neste dia.</div>`;
+  $('#dt-title').textContent = `Atrasos · ${dataFmt}`;
+  $('#dt-body').innerHTML = html;
+  const ov = $('#detail-overlay'); if(!ov) return;
+  ov.style.display = 'flex'; document.body.style.overflow = 'hidden';
+  requestAnimationFrame(() => ov.classList.add('open'));
+}
+// Ofensores recorrentes: destinos com maior TAXA de atraso (mín. de volume), não só volume
+function renderRelRecorrentes(){
+  const host = $('#rel-recorrentes'); if(!host) return;
+  const by = {};
+  _relData.fin.forEach(r => { const k=(r.destino||'—'); if(!by[k]) by[k]={n:0,at:0}; by[k].n++; if(/atrasad/i.test(r.resultado||'')) by[k].at++; });
+  const MIN = 5;
+  const rows = Object.entries(by)
+    .filter(([k,o]) => o.n >= MIN && o.at > 0)
+    .map(([k,o]) => ({ dest:k, n:o.n, at:o.at, taxa: Math.round(o.at/o.n*100) }))
+    .sort((a,b) => b.taxa - a.taxa || b.at - a.at).slice(0,8);
+  if(!rows.length){ host.innerHTML = `<div class="empty-state" style="padding:20px">Nenhum ofensor recorrente (mín. ${MIN} viagens no destino).</div>`; return; }
+  host.innerHTML = rows.map(r => {
+    const cls = r.taxa>=50 ? 'b-vermelho' : (r.taxa>=25 ? 'b-amarelo' : 'b-verde');
+    return `<div class="rec-row" data-dest="${escapeHtml(r.dest)}"><div class="rec-dest">${escapeHtml(r.dest)}</div>
+      <div class="rec-bar"><div class="rec-fill" style="width:${Math.max(4,r.taxa)}%"></div></div>
+      <div class="rec-meta"><span class="badge ${cls}"><span class="badge-dot"></span>${r.taxa}%</span> <span class="rec-vol">${r.at}/${r.n}</span> <span class="rec-go">›</span></div></div>`;
+  }).join('');
+}
 // Resumo do que está acontecendo num destino (clique numa linha da tabela de destinos)
 function openDestDetail(dest){
   const fin  = _relData.fin.filter(r => (r.destino||'—') === dest);
@@ -1545,19 +1676,7 @@ function openDestDetail(dest){
     + ocorTop.map(([k,v]) => dtField(k, v+'×')).join('');
   if(atrasadas.length){
     html += `<div class="dt-sec">Rotas atrasadas — identificação · trecho · ocorrência (${atrasadas.length})</div>`;
-    html += atrasadas.map(r => {
-      const isRost = r.rostering_id && r.rostering_id !== '0';
-      const id  = isRost ? r.rostering_id : (r.route_id || '—');
-      const tag = isRost ? 'Protocolo' : 'Travel ID';
-      const trecho = (r.trecho||'').trim() || `${r.origem||'?'} → ${r.destino||'?'}`;
-      const oc = relJustificativa(r) || 'Sem ocorrência registrada';
-      return `<div class="dt-atr">
-        <div class="dt-atr-top"><span class="mono">${escapeHtml(id)}</span> <span class="id-tag ${isRost?'id-proto':'id-travel'}">${tag}</span>
-          <span class="dt-atr-nom">${escapeHtml(r.servico||'')}</span></div>
-        <div class="dt-atr-tr">${escapeHtml(trecho)}</div>
-        <div class="dt-atr-oc">${escapeHtml(oc)}</div>
-      </div>`;
-    }).join('');
+    html += atrasadas.map(relAtrasoItem).join('');
   }
   if(tipoTop.length) html += `<div class="dt-sec">Tipos de rota</div>`
     + tipoTop.map(([k,v]) => dtField(k, v+'×')).join('');
@@ -1694,6 +1813,9 @@ function bindRelatorios(){
     if(e.target.closest('#rel-canc-back')){ _relCancMotivo = null; renderRelCancelamentos(); return; }
     const chip = e.target.closest('.rel-chip'); if(chip){ _relAtrasoTipo = chip.dataset.tipo || null; renderRelAtrasos(); return; }
     const dtr = e.target.closest('#rel-dest-tbody tr[data-dest]'); if(dtr){ openDestDetail(dtr.dataset.dest); return; }
+    const rec = e.target.closest('.rec-row[data-dest]'); if(rec){ openDestDetail(rec.dataset.dest); return; }
+    const cnav = e.target.closest('.cal-nav'); if(cnav){ calNav(cnav.dataset.cal); return; }
+    const cday = e.target.closest('.cal-day[data-calday]'); if(cday){ openDayDetail(cday.dataset.calday); return; }
     const tr = e.target.closest('#view-relatorios tbody tr[data-rid]'); if(tr){ openHistDetail(_relRowMap[tr.dataset.rid]); return; }
     const rtr = e.target.closest('#view-alertas tbody tr[data-rrid]'); if(rtr){ openHistDetail(_riscoRowMap[rtr.dataset.rrid]); return; }
   });
