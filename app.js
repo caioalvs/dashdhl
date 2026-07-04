@@ -648,11 +648,11 @@ function fillEtdXpt(rows){
       <td class="mono">${escapeHtml(d.placa)}</td>
       <td>${escapeHtml(d.destino||'—')}</td>
       <td>${fmtDateTime(d.etaDestino)}</td>
-      <td>${d.kmFaltante!=null ? d.kmFaltante+' km' : '—'}</td>
-      <td>${d.deslocHora!=null ? d.deslocHora+' km' : '—'}</td>
-      <td>${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
+      <td class="num">${d.kmFaltante!=null ? d.kmFaltante+' km' : '—'}</td>
+      <td class="num">${d.deslocHora!=null ? d.deslocHora+' km' : '—'}</td>
+      <td class="num">${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
-      <td>${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
+      <td class="num">${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
       ${docCell(d)}
       ${ocorCell(d)}
     </tr>`).join('');
@@ -682,7 +682,7 @@ function fillEtdAguardando(rows){
       <td><span class="ocor-info">${escapeHtml(d.baseEstado||'Pendente')}</span></td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
       ${ocorCell(d)}
-      <td>${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
+      <td class="num">${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
     </tr>`; }).join('');
 }
 
@@ -702,10 +702,10 @@ function fillEtdPosto(rows){
       <td class="mono">${escapeHtml(d.placa)}</td>
       <td>${escapeHtml(d.destino||'—')}</td>
       <td>${progressCell(d)}</td>
-      <td>${d.kmFaltante!=null ? d.kmFaltante+' km' : '—'}</td>
-      <td><b>${d.kmMedio!=null ? d.kmMedio+' km/h' : '—'}</b></td>
+      <td class="num">${d.kmFaltante!=null ? d.kmFaltante+' km' : '—'}</td>
+      <td class="num"><b>${d.kmMedio!=null ? d.kmMedio+' km/h' : '—'}</b></td>
       <td><span class="ocor-info">${escapeHtml(d.postoSituacao||'—')}</span></td>
-      <td><b>${d.postoKm!=null ? d.postoKm+' km' : '—'}</b></td>
+      <td class="num"><b>${d.postoKm!=null ? d.postoKm+' km' : '—'}</b></td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
     </tr>`).join('');
 }
@@ -727,12 +727,12 @@ function fillEtdTable(key, rows){
       <td>${escapeHtml(d.destino||'—')}</td>
       <td>${fmtDateTime(d.etaDestino)}</td>
       <td>${progressCell(d)}</td>
-      <td>${d.kmFaltante!=null ? d.kmFaltante+' km' : '—'}</td>
-      <td>${d.kmNegativo ? `<b class="ocor-alert" title="Cálculo estourou — já passou do prazo e atrasando">${d.kmMedio} km/h ⚠</b>` : `<b>${d.kmMedio!=null ? d.kmMedio+' km/h' : '—'}</b>`}</td>
-      <td>${d.deslocHora!=null ? d.deslocHora+' km' : '—'}</td>
-      <td>${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
+      <td class="num">${d.kmFaltante!=null ? d.kmFaltante+' km' : '—'}</td>
+      <td class="num">${d.kmNegativo ? `<b class="ocor-alert" title="Cálculo estourou — já passou do prazo e atrasando">${d.kmMedio} km/h ⚠</b>` : `<b>${d.kmMedio!=null ? d.kmMedio+' km/h' : '—'}</b>`}</td>
+      <td class="num">${d.deslocHora!=null ? d.deslocHora+' km' : '—'}</td>
+      <td class="num">${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
-      <td>${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
+      <td class="num">${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
       ${docCell(d)}
       ${ocorCell(d)}
     </tr>`).join('');
@@ -790,11 +790,11 @@ function fillEtdNaoPrio(rows){
       <td class="mono">${escapeHtml(d.placa)}</td>
       <td>${escapeHtml(d.destino||'—')}</td>
       <td>${fmtDateTime(d.etaDestino)}</td>
-      <td>${d.kmFaltante!=null ? d.kmFaltante+' km' : '—'}</td>
-      <td>${d.deslocHora!=null ? d.deslocHora+' km' : '—'}</td>
-      <td>${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
+      <td class="num">${d.kmFaltante!=null ? d.kmFaltante+' km' : '—'}</td>
+      <td class="num">${d.deslocHora!=null ? d.deslocHora+' km' : '—'}</td>
+      <td class="num">${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
-      <td>${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
+      <td class="num">${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
       ${docCell(d)}
       ${ocorCell(d)}
     </tr>`).join('');
@@ -826,10 +826,10 @@ function renderXptTable(){
       <td>${fmtDateTime(d.etaOrigem)||'—'}</td>
       <td>${bip}</td>
       <td>${statusBadge(d.status)}</td>
-      <td>${d.pacotes!=null?d.pacotes.toLocaleString('pt-BR'):'—'}</td>
+      <td class="num">${d.pacotes!=null?d.pacotes.toLocaleString('pt-BR'):'—'}</td>
       <td>${docB}</td>
       <td>${escapeHtml(d.performance||'—')}</td>
-      <td class="mono">${d.pontuacao!=null?d.pontuacao:'—'}</td>
+      <td class="mono num">${d.pontuacao!=null?d.pontuacao:'—'}</td>
     </tr>`;
   }).join('') : `<tr><td colspan="11"><div class="empty-state">Nenhum checkpoint corresponde à busca.</div></td></tr>`;
 }

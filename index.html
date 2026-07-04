@@ -282,6 +282,8 @@
   table { width:100%; border-collapse: collapse; font-size: 12.5px; }
   thead th { background: var(--bg-panel-2); text-align:left; padding: 10px 14px; font-size: 10.5px; font-weight:700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-dim); border-bottom: 1.5px solid #dde3ee; white-space: nowrap; position: sticky; top: 0; box-shadow: 0 1px 0 rgba(16,24,40,.03); }
   tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; color: var(--text); }
+  /* colunas numéricas alinhadas à direita, casas no esquadro */
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
   tbody tr { transition: background .12s ease; }
   tbody tr:hover { background: var(--yellow-soft); }
   tbody tr:last-child td { border-bottom:none; }
@@ -827,21 +829,21 @@
         <div class="table-wrap">
           <div class="table-head-bar th-verde"><span class="dot"></span> No prazo — km/h médio necessário até 46<span class="cnt"><b id="etd-cnt-verde">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h médio</th><th>Desloc. 1h</th><th>Velocidade</th><th>Status SM</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th class="num">Km Faltante</th><th class="num">Km/h médio</th><th class="num">Desloc. 1h</th><th class="num">Velocidade</th><th>Status SM</th><th class="num">Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
             <tbody id="etd-tbody-verde"></tbody>
           </table></div>
         </div>
         <div class="table-wrap">
           <div class="table-head-bar th-amarelo"><span class="dot"></span> Risco — km/h médio necessário entre 47 e 55<span class="cnt"><b id="etd-cnt-amarelo">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h médio</th><th>Desloc. 1h</th><th>Velocidade</th><th>Status SM</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th class="num">Km Faltante</th><th class="num">Km/h médio</th><th class="num">Desloc. 1h</th><th class="num">Velocidade</th><th>Status SM</th><th class="num">Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
             <tbody id="etd-tbody-amarelo"></tbody>
           </table></div>
         </div>
         <div class="table-wrap">
           <div class="table-head-bar th-vermelho"><span class="dot"></span> Possível atraso — km/h médio &gt;55 ou negativo (cálculo estourou, já atrasando)<span class="cnt"><b id="etd-cnt-vermelho">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h médio</th><th>Desloc. 1h</th><th>Velocidade</th><th>Status SM</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th class="num">Km Faltante</th><th class="num">Km/h médio</th><th class="num">Desloc. 1h</th><th class="num">Velocidade</th><th>Status SM</th><th class="num">Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
             <tbody id="etd-tbody-vermelho"></tbody>
           </table></div>
         </div>
@@ -850,7 +852,7 @@
         <div class="table-wrap">
           <div class="table-head-bar th-grey"><span class="dot"></span> Aguardando início — ainda não saíram da origem <span class="cnt"><b id="etd-cnt-aguard">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>CPT</th><th>Horário destino</th><th>Estado</th><th>Status SM</th><th>Ocorrência</th><th>Pacotes</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>CPT</th><th>Horário destino</th><th>Estado</th><th>Status SM</th><th>Ocorrência</th><th class="num">Pacotes</th></tr></thead>
             <tbody id="etd-tbody-aguard"></tbody>
           </table></div>
         </div>
@@ -859,7 +861,7 @@
         <div class="table-wrap">
           <div class="table-head-bar th-grey"><span class="dot"></span> Reversas — agrupadas à parte (com pacote no topo) <span class="cnt"><b id="etd-cnt-nao">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Km Faltante</th><th>Desloc. 1h</th><th>Velocidade</th><th>Status SM</th><th>Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th class="num">Km Faltante</th><th class="num">Desloc. 1h</th><th class="num">Velocidade</th><th>Status SM</th><th class="num">Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
             <tbody id="etd-tbody-nao"></tbody>
           </table></div>
         </div>
@@ -868,7 +870,7 @@
         <div class="table-wrap">
           <div class="table-head-bar"><span class="dot" style="background:var(--ml-blue)"></span> Posto fiscal — veículos com excepcionalidade a acompanhar <span class="cnt"><b id="etd-cnt-posto">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Progresso</th><th>Km Faltante</th><th>Km/h médio</th><th>Situação</th><th>Km até o posto</th><th>Status SM</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Progresso</th><th class="num">Km Faltante</th><th class="num">Km/h médio</th><th>Situação</th><th class="num">Km até o posto</th><th>Status SM</th></tr></thead>
             <tbody id="etd-tbody-posto"></tbody>
           </table></div>
         </div>
@@ -887,7 +889,7 @@
           <div class="result-count"><b id="xpt-count">0</b> checkpoints</div>
         </div>
         <div class="table-wrap"><div class="table-scroll"><table>
-          <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Motorista</th><th>CPT previsto</th><th>Bipagem CPT</th><th>Status</th><th>Pacotes</th><th>DOC</th><th>Performance</th><th>Pontuação</th></tr></thead>
+          <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Motorista</th><th>CPT previsto</th><th>Bipagem CPT</th><th>Status</th><th class="num">Pacotes</th><th>DOC</th><th>Performance</th><th class="num">Pontuação</th></tr></thead>
           <tbody id="xpt-tbody"></tbody>
         </table></div></div>
       </section>
