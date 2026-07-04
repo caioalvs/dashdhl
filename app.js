@@ -280,8 +280,12 @@ function buildOcorIndex(){
     const p = String(r.protocolo || '').trim();
     const o = fixMojibake((r.ocorrencia || '').trim());
     if(!p || !o) return;
-    if(OCOR_INDEX[p]){ if(!OCOR_INDEX[p].includes(o)) OCOR_INDEX[p] += ' · ' + o; }  // junta múltiplas
-    else OCOR_INDEX[p] = o;
+    // amarra a ocorrência ao TRECHO onde o incidente aconteceu (origem→destino da própria ocorrência)
+    const org = (r.oOrigem||'').trim(), dst = (r.oDestino||'').trim();
+    const trecho = (org || dst) ? `${org||'?'}→${dst||'?'}` : '';
+    const entry = trecho ? `${trecho}: ${o}` : o;
+    if(OCOR_INDEX[p]){ if(!OCOR_INDEX[p].includes(entry)) OCOR_INDEX[p] += ' · ' + entry; }  // junta múltiplas (uma por trecho)
+    else OCOR_INDEX[p] = entry;
   });
 }
 
@@ -2876,7 +2880,8 @@ function mapSmRow(row){
 
 // Aba Ocorrências: A = protocolo · O = ocorrência (motivo em sistema)
 function mapOcorrenciaRow(row){
-  return { protocolo: cell(row,'A'), ocorrencia: cell(row,'O') };
+  // A=protocolo · K=origem do trecho · L=destino do trecho · O=incidência (ocorrência)
+  return { protocolo: cell(row,'A'), oOrigem: cell(row,'K'), oDestino: cell(row,'L'), ocorrencia: cell(row,'O') };
 }
 
 // Aba Base (fonte central). Chave = Rostering ID (col B). Colunas por POSIÇÃO:
