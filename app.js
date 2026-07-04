@@ -110,6 +110,11 @@ function escapeHtml(s){
   if(s === null || s === undefined) return '';
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+// Repara "mojibake": texto UTF-8 que em algum ponto foi lido como Latin-1 (ex.: "incompatÃ­vel" → "incompatível")
+function fixMojibake(s){
+  if(typeof s !== 'string' || (s.indexOf('Ã') < 0 && s.indexOf('Â') < 0 && s.indexOf('â€') < 0)) return s;
+  try { return decodeURIComponent(escape(s)); } catch(e){ return s; }
+}
 
 /* ----------------------------------------------------------------------- */
 /* Multi-select (checkboxes) — componente leve                              */
@@ -273,7 +278,7 @@ function buildOcorIndex(){
   OCOR_INDEX = {};
   (DASHBOARD_DATA.ocorrencias || []).forEach(r => {
     const p = String(r.protocolo || '').trim();
-    const o = (r.ocorrencia || '').trim();
+    const o = fixMojibake((r.ocorrencia || '').trim());
     if(!p || !o) return;
     if(OCOR_INDEX[p]){ if(!OCOR_INDEX[p].includes(o)) OCOR_INDEX[p] += ' · ' + o; }  // junta múltiplas
     else OCOR_INDEX[p] = o;
@@ -388,7 +393,7 @@ function enrichData(){
     const pk = String(d.protocolo || '').trim();
     d.ocorrencia = OCOR_INDEX[pk] || '';
     const b = BASE_INDEX[pk];
-    d.causaRaiz = (b && b.causaRaiz ? b.causaRaiz.trim() : '');
+    d.causaRaiz = fixMojibake(b && b.causaRaiz ? b.causaRaiz.trim() : '');
   });
 
   // ---- ETD: faixa pela coluna Q (km/h médio necessário), parados (col L) e prioridade
@@ -446,7 +451,7 @@ function enrichData(){
       const est = (base.estado || '').trim().toLowerCase();
       d.baseEstado = base.estado || '';
       d.baseSub    = base.substatus || '';
-      d.causaRaiz  = (base.causaRaiz || '').trim();
+      d.causaRaiz  = fixMojibake((base.causaRaiz || '').trim());
       d.origemATD  = (base.origemATD || '').trim();
       d.routeId    = base.routeId || '';
       d.naoIniciada = (est === 'pendente');
@@ -1423,7 +1428,7 @@ function relJustificativa(r){
   const o = OCOR_INDEX[String(r.rostering_id||'').trim()];
   if(o) return o;
   const c = (r.causa_raiz||'').trim();
-  return c || '';
+  return fixMojibake(c) || '';
 }
 function renderRelResumo(){
   const fin = _relData.fin, canc = _relData.canc;
@@ -1551,7 +1556,7 @@ function relAtrasoItem(r){
   const isRost = r.rostering_id && r.rostering_id !== '0';
   const id  = isRost ? r.rostering_id : (r.route_id || '—');
   const tag = isRost ? 'Protocolo' : 'Travel ID';
-  const trecho = (r.trecho||'').trim() || `${r.origem||'?'} → ${r.destino||'?'}`;
+  const trecho = (r.origem || r.destino) ? `${r.origem||'?'} → ${r.destino||'?'}` : ((r.trecho||'').trim() || '—');
   const oc = relJustificativa(r) || 'Sem ocorrência registrada';
   return `<div class="dt-atr">
     <div class="dt-atr-top"><span class="mono">${escapeHtml(id)}</span> <span class="id-tag ${isRost?'id-proto':'id-travel'}">${tag}</span>
