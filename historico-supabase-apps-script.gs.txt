@@ -69,7 +69,8 @@ function enviarHistoricoSupabase() {
         causa_raiz: txt(r[C.causaRaiz - 1]),
         pre_check_origem: txt(r[C.preCheckOrigem - 1]),
         pre_check_destino: txt(r[C.preCheckDestino - 1]),
-        destino_eta: txt(r[C.destinoETA - 1])
+        destino_eta: txt(r[C.destinoETA - 1]),
+        origem_eta: txt(r[C.origemETA - 1])
       };
     }
 
@@ -96,7 +97,8 @@ function enviarHistoricoSupabase() {
         causa_raiz: null,
         pre_check_origem: txt(r[C.preCheckOrigem - 1]),
         pre_check_destino: txt(r[C.preCheckDestino - 1]),
-        destino_eta: txt(r[C.destinoETA - 1])
+        destino_eta: txt(r[C.destinoETA - 1]),
+        origem_eta: txt(r[C.origemETA - 1])
       };
     }
   }

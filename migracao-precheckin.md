@@ -8,13 +8,14 @@ Pra a tabela histórica ("Atrasos sem ocorrência" na aba Alertas) também usar 
 alter table viagens_historico add column if not exists pre_check_origem  text;
 alter table viagens_historico add column if not exists pre_check_destino text;
 alter table viagens_historico add column if not exists destino_eta       text;
+alter table viagens_historico add column if not exists origem_eta        text;
 ```
 
 Deve aparecer "Success".
 
 ## 2) Atualize o Apps Script
 
-Cole a versão nova de `historico-supabase-apps-script.gs.txt` (já passa a gravar `pre_check_origem` = Base col V, `pre_check_destino` = Base col AF e `destino_eta` = Base col Y). Rode **`enviarHistoricoSupabase`** de novo — o upsert preenche as colunas novas nos registros existentes.
+Cole a versão nova de `historico-supabase-apps-script.gs.txt` (já passa a gravar `pre_check_origem` = Base col V, `pre_check_destino` = Base col AF e `destino_eta` = Base col Y e `origem_eta` = Base col P). Rode **`enviarHistoricoSupabase`** de novo — o upsert preenche as colunas novas nos registros existentes.
 
 ## 3) O que muda
 

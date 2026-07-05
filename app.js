@@ -507,11 +507,15 @@ function enrichData(){
     // previsto (ETD col F, ou Base col Y de fallback), a rota chegou no prazo mesmo constando
     // atraso — então NÃO precisa de ocorrência.
     d.preCheckDestino = base ? (base.preCheckDestino || '') : '';
+    d.origemETA = base ? (base.origemETA || '') : '';   // P = ETA na origem (chegar pra carregar)
     const prazoChegada = d.etaDestino || (base && base.destinoETA ? parseDateBR(base.destinoETA) : null);
     const preCheckDt   = parseDateBR(d.preCheckDestino);
     d.preCheckNoPrazo  = !!(preCheckDt && prazoChegada && new Date(preCheckDt) < new Date(prazoChegada));
-    // "Consta atraso": possível atraso (faixa vermelha), parado, ou substatus = Atrasado
-    const constaAtraso = d.risco === 'vermelho' || d.parado || /atrasad/i.test(d.substatus || '');
+    // Já passou do prazo de chegada no cliente (e não há pré check-in provando que chegou)?
+    const venceuPrazo = !!(prazoChegada && new Date(prazoChegada) < new Date());
+    // "Consta atraso": possível atraso (faixa vermelha), substatus = Atrasado, OU
+    // parado E já venceu o prazo. Parado dentro do prazo = ainda no prazo, NÃO conta.
+    const constaAtraso = d.risco === 'vermelho' || /atrasad/i.test(d.substatus || '') || (d.parado && venceuPrazo);
     // Precisa de ocorrência: consta atraso, SEM ocorrência lançada, e o pré check-in NÃO salvou
     d.precisaOcorrencia = constaAtraso && isNA(d.ocorrencia) && !d.preCheckNoPrazo && !d.finalizada && !d.naoIniciada && !d.ehXpt;
 
@@ -1104,31 +1108,48 @@ function renderAlertas(){
 // Risco de justificativa: viagens FINALIZADAS com ATRASO e SEM ocorrência (últimos 3 dias)
 let _riscoRows = []; let _riscoSeq = 0; const _riscoRowMap = {};
 async function fetchAtrasosSemOcorrencia(){
-  const end = new Date(), start = new Date(); start.setDate(end.getDate() - 2);
+  // Histórico COMPLETO (todos os dias) — é uma tabela de cobrança: nada de atraso sem
+  // ocorrência pode escapar. Data inicial bem anterior ao início da operação.
+  const end = new Date();
   const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const res = await fetchHistorico(fmt(start), fmt(end));
+  const res = await fetchHistorico('2024-01-01', fmt(end));
   if(!res.ok && !res.rows.length) return;
   _riscoRows = res.rows
     .filter(r => !/xpt/i.test(r.servico||''))   // XPT é operação à parte — fora do risco Line Haul
     .filter(r => /finaliz/i.test(r.estado||'') && /atrasad/i.test(r.resultado||''))
     .filter(r => !relJustificativa(r))    // sem ocorrência em sistema E sem causa raiz
     .filter(r => !preCheckinNoPrazo(r));  // pré check-in no destino antes do prazo = chegou no prazo (GPS), não precisa ocorrência
+  _riscoRows.sort((a,b) => String(b.data||'').localeCompare(String(a.data||'')));  // data ISO (yyyy-MM-dd) — mais recentes no topo
   renderAlertasRisco();
 }
 // Chegou no prazo pelo GPS: pré check-in no destino antes do ETA de destino (Base como referência)
 function preCheckinNoPrazo(r){
-  const pc = parseDateBR(r.pre_check_destino);
-  const eta = parseDateBR(r.destino_eta);
+  const pc = parseAnyDate(r.pre_check_destino);
+  const eta = parseAnyDate(r.destino_eta);
   return !!(pc && eta && new Date(pc) < new Date(eta));
 }
 function renderAlertasRisco(){
   const cnt = $('#alertas-risco-cnt'); if(cnt) cnt.textContent = _riscoRows.length;
   const tb = $('#alertas-risco-tbody'); if(!tb) return;
   _riscoSeq = 0; for(const k in _riscoRowMap) delete _riscoRowMap[k];
-  if(!_riscoRows.length){ tb.innerHTML = `<tr><td colspan="6"><div class="empty-state">Nenhum atraso sem ocorrência nos últimos 3 dias. 👍</div></td></tr>`; return; }
+  if(!_riscoRows.length){ tb.innerHTML = `<tr><td colspan="8"><div class="empty-state">Nenhum atraso sem ocorrência no histórico. 👍</div></td></tr>`; return; }
   tb.innerHTML = _riscoRows.map(r => { const rid = _riscoSeq++; _riscoRowMap[rid] = r;
-    return `<tr class="rel-click crit" data-rrid="${rid}"><td>${relIdCell(r)}</td><td class="mono">${escapeHtml(r.servico||'—')}</td><td>${escapeHtml(tipoRota(r.servico))}</td><td>${escapeHtml(r.estado||'—')}</td><td>${escapeHtml(r.resultado||'—')}</td><td><span class="ocor-alert">sem ocorrência</span></td></tr>`;
+    return `<tr class="rel-click crit" data-rrid="${rid}"><td>${relIdCell(r)}</td><td class="mono">${escapeHtml(r.servico||'—')}</td><td>${escapeHtml(tipoRota(r.servico))}</td><td>${fmtHora(r.origem_eta)}</td><td>${fmtHora(r.destino_eta)}</td><td>${escapeHtml(r.estado||'—')}</td><td>${escapeHtml(r.resultado||'—')}</td><td><span class="ocor-alert">sem ocorrência</span></td></tr>`;
   }).join('');
+}
+// Parser tolerante: aceita ISO (yyyy-MM-dd HH:mm, vindo do Supabase) e BR (dd/mm/yyyy HH:mm).
+function parseAnyDate(v){
+  if(v instanceof Date) return isNaN(v.getTime()) ? null : v;
+  const str = String(v||'').trim(); if(!str) return null;
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2}))?/);
+  if(m) return new Date(+m[1], +m[2]-1, +m[3], +m[4]||0, +m[5]||0);
+  return parseDateBR(str);
+}
+// Mostra um horário (Date ou string ISO/BR) formatado; '—' quando vazio.
+function fmtHora(v){
+  const d = (v instanceof Date) ? v : parseAnyDate(v);
+  if(d && !isNaN(d.getTime())) return fmtDateTime(d) || '—';
+  return v ? escapeHtml(String(v)) : '—';
 }
 // Rotas AO VIVO que precisam de ocorrência (constam atraso, sem ocorrência, pré check-in não salvou)
 function renderAlertasPrecisaOcorrencia(){
@@ -1136,7 +1157,7 @@ function renderAlertasPrecisaOcorrencia(){
   const cnt = $('#alertas-ocor-cnt'); if(cnt) cnt.textContent = rows.length;
   const tb = $('#alertas-ocor-tbody'); if(!tb) return;
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="6"><div class="empty-state">Nenhuma rota pendente de ocorrência — as atrasadas já têm justificativa ou chegaram no prazo pelo pré check-in. 👍</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="7"><div class="empty-state">Nenhuma rota pendente de ocorrência — as atrasadas já têm justificativa ou chegaram no prazo pelo pré check-in. 👍</div></td></tr>`;
     return;
   }
   rows.sort((a,b) => (b.risco==='vermelho'?1:0) - (a.risco==='vermelho'?1:0) || (b.parado?1:0) - (a.parado?1:0));
@@ -1148,7 +1169,8 @@ function renderAlertasPrecisaOcorrencia(){
       <td>${escapeHtml(d.destino||'—')}</td>
       <td><span class="ocor-alert">${motivo}</span></td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
-      <td>${fmtDateTime(d.etaDestino)||'—'}</td>
+      <td>${fmtHora(d.origemETA)}</td>
+      <td>${fmtHora(d.etaDestino)}</td>
     </tr>`;
   }).join('');
 }
@@ -1393,11 +1415,15 @@ function relIdCell(r){
 }
 async function fetchHistorico(startISO, endISO){
   if(!SUPABASE.url || !SUPABASE.anon) return { ok:false, rows:[] };
-  const cols = 'rostering_id,route_id,servico,estado,resultado,pacotes,chegada,saida_programada,causa_raiz,origem,destino,motivo_cancelamento,trecho,data,fase,pre_check_destino,destino_eta';
-  const q = `${SUPABASE.url}/rest/v1/viagens_historico?select=${cols}&data=gte.${startISO}&data=lte.${endISO}&order=data.asc`;
+  // Colunas SEMPRE existentes + colunas opcionais (adicionadas por migração). Se as opcionais
+  // ainda não existem no banco (ou o cache de schema do PostgREST está velho), o select inteiro
+  // falharia e o histórico sumiria — por isso caímos pro básico automaticamente.
+  const core  = 'rostering_id,route_id,servico,estado,resultado,pacotes,chegada,saida_programada,causa_raiz,origem,destino,motivo_cancelamento,trecho,data,fase';
+  const extra = ',pre_check_destino,destino_eta,origem_eta';
   const headers = { apikey: SUPABASE.anon, Authorization: 'Bearer ' + SUPABASE.anon };
-  let all = [], offset = 0; const page = 1000;
-  try {
+  async function pull(cols){
+    let all = [], offset = 0; const page = 1000;
+    const q = `${SUPABASE.url}/rest/v1/viagens_historico?select=${cols}&data=gte.${startISO}&data=lte.${endISO}&order=data.asc`;
     for(;;){
       const r = await fetch(`${q}&limit=${page}&offset=${offset}`, { headers });
       if(!r.ok) return { ok:false, rows:all, err:r.status };
@@ -1407,8 +1433,13 @@ async function fetchHistorico(startISO, endISO){
       offset += page;
       if(offset > 500000) break;
     }
-  } catch(e){ return { ok:false, rows:all, err:'rede' }; }
-  return { ok:true, rows:all };
+    return { ok:true, rows:all };
+  }
+  try {
+    let res = await pull(core + extra);   // tenta com ETA origem/destino + pré check-in
+    if(!res.ok) res = await pull(core);   // coluna nova ausente / schema velho → básico (nunca some)
+    return res;
+  } catch(e){ return { ok:false, rows:[], err:'rede' }; }
 }
 function relRange(key){
   const end = new Date(), start = new Date();
