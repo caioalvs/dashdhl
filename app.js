@@ -503,6 +503,18 @@ function enrichData(){
       if(!partiu && new Date(d.cpt) < new Date()) d.cptEstourou = true;
     }
 
+    // Pré check-in destino (o GPS registrou a chegada no cliente). Se chegou ANTES do prazo
+    // previsto (ETD col F, ou Base col Y de fallback), a rota chegou no prazo mesmo constando
+    // atraso — então NÃO precisa de ocorrência.
+    d.preCheckDestino = base ? (base.preCheckDestino || '') : '';
+    const prazoChegada = d.etaDestino || (base && base.destinoETA ? parseDateBR(base.destinoETA) : null);
+    const preCheckDt   = parseDateBR(d.preCheckDestino);
+    d.preCheckNoPrazo  = !!(preCheckDt && prazoChegada && new Date(preCheckDt) < new Date(prazoChegada));
+    // "Consta atraso": possível atraso (faixa vermelha), parado, ou substatus = Atrasado
+    const constaAtraso = d.risco === 'vermelho' || d.parado || /atrasad/i.test(d.substatus || '');
+    // Precisa de ocorrência: consta atraso, SEM ocorrência lançada, e o pré check-in NÃO salvou
+    d.precisaOcorrencia = constaAtraso && isNA(d.ocorrencia) && !d.preCheckNoPrazo && !d.finalizada && !d.naoIniciada && !d.ehXpt;
+
     // Origem-destino: pela NOMENCLATURA (col F da aba) descobre as siglas/nomes;
     // a sigla puxa o endereço do service center na aba Links.
     const od = OD_INDEX[normKey(d.rota)];
@@ -1087,6 +1099,7 @@ function renderAlertas(){
   fillLane('crit', reds, 'crit');
   fillLane('warn', ambs, 'warn');
   fillLane('info', greys, 'info');
+  renderAlertasPrecisaOcorrencia();
 }
 // Risco de justificativa: viagens FINALIZADAS com ATRASO e SEM ocorrência (últimos 3 dias)
 let _riscoRows = []; let _riscoSeq = 0; const _riscoRowMap = {};
@@ -1098,8 +1111,15 @@ async function fetchAtrasosSemOcorrencia(){
   _riscoRows = res.rows
     .filter(r => !/xpt/i.test(r.servico||''))   // XPT é operação à parte — fora do risco Line Haul
     .filter(r => /finaliz/i.test(r.estado||'') && /atrasad/i.test(r.resultado||''))
-    .filter(r => !relJustificativa(r));   // sem ocorrência em sistema E sem causa raiz
+    .filter(r => !relJustificativa(r))    // sem ocorrência em sistema E sem causa raiz
+    .filter(r => !preCheckinNoPrazo(r));  // pré check-in no destino antes do prazo = chegou no prazo (GPS), não precisa ocorrência
   renderAlertasRisco();
+}
+// Chegou no prazo pelo GPS: pré check-in no destino antes do ETA de destino (Base como referência)
+function preCheckinNoPrazo(r){
+  const pc = parseDateBR(r.pre_check_destino);
+  const eta = parseDateBR(r.destino_eta);
+  return !!(pc && eta && new Date(pc) < new Date(eta));
 }
 function renderAlertasRisco(){
   const cnt = $('#alertas-risco-cnt'); if(cnt) cnt.textContent = _riscoRows.length;
@@ -1108,6 +1128,28 @@ function renderAlertasRisco(){
   if(!_riscoRows.length){ tb.innerHTML = `<tr><td colspan="6"><div class="empty-state">Nenhum atraso sem ocorrência nos últimos 3 dias. 👍</div></td></tr>`; return; }
   tb.innerHTML = _riscoRows.map(r => { const rid = _riscoSeq++; _riscoRowMap[rid] = r;
     return `<tr class="rel-click crit" data-rrid="${rid}"><td>${relIdCell(r)}</td><td class="mono">${escapeHtml(r.servico||'—')}</td><td>${escapeHtml(tipoRota(r.servico))}</td><td>${escapeHtml(r.estado||'—')}</td><td>${escapeHtml(r.resultado||'—')}</td><td><span class="ocor-alert">sem ocorrência</span></td></tr>`;
+  }).join('');
+}
+// Rotas AO VIVO que precisam de ocorrência (constam atraso, sem ocorrência, pré check-in não salvou)
+function renderAlertasPrecisaOcorrencia(){
+  const rows = (DASHBOARD_DATA.etd || []).filter(d => d.precisaOcorrencia);
+  const cnt = $('#alertas-ocor-cnt'); if(cnt) cnt.textContent = rows.length;
+  const tb = $('#alertas-ocor-tbody'); if(!tb) return;
+  if(!rows.length){
+    tb.innerHTML = `<tr><td colspan="6"><div class="empty-state">Nenhuma rota pendente de ocorrência — as atrasadas já têm justificativa ou chegaram no prazo pelo pré check-in. 👍</div></td></tr>`;
+    return;
+  }
+  rows.sort((a,b) => (b.risco==='vermelho'?1:0) - (a.risco==='vermelho'?1:0) || (b.parado?1:0) - (a.parado?1:0));
+  tb.innerHTML = rows.map(d => {
+    const motivo = d.risco==='vermelho' ? 'Possível atraso' : (d.parado ? 'Veículo parado' : 'Atrasado');
+    return `<tr class="crit" data-proto="${escapeHtml(d.protocolo)}" style="cursor:pointer">
+      ${protoTd(d.protocolo)}
+      <td class="mono">${escapeHtml(d.rota||'—')}</td>
+      <td>${escapeHtml(d.destino||'—')}</td>
+      <td><span class="ocor-alert">${motivo}</span></td>
+      <td>${escapeHtml(d.statusSM||'—')}</td>
+      <td>${fmtDateTime(d.etaDestino)||'—'}</td>
+    </tr>`;
   }).join('');
 }
 function fillLane(key, arr, cls){
@@ -1351,7 +1393,7 @@ function relIdCell(r){
 }
 async function fetchHistorico(startISO, endISO){
   if(!SUPABASE.url || !SUPABASE.anon) return { ok:false, rows:[] };
-  const cols = 'rostering_id,route_id,servico,estado,resultado,pacotes,chegada,saida_programada,causa_raiz,origem,destino,motivo_cancelamento,trecho,data,fase';
+  const cols = 'rostering_id,route_id,servico,estado,resultado,pacotes,chegada,saida_programada,causa_raiz,origem,destino,motivo_cancelamento,trecho,data,fase,pre_check_destino,destino_eta';
   const q = `${SUPABASE.url}/rest/v1/viagens_historico?select=${cols}&data=gte.${startISO}&data=lte.${endISO}&order=data.asc`;
   const headers = { apikey: SUPABASE.anon, Authorization: 'Bearer ' + SUPABASE.anon };
   let all = [], offset = 0; const page = 1000;
@@ -1946,6 +1988,8 @@ function bindRowDetails(){
     if(wi){ openDetail(wi.dataset.proto); return; }
     const ac = e.target.closest('.alert-card');
     if(ac){ openDetail(ac.dataset.proto); return; }
+    const ocr = e.target.closest('#alertas-ocor-tbody tr[data-proto]');
+    if(ocr){ openDetail(ocr.dataset.proto); return; }
     const oclr = e.target.closest('#ofen-clear');
     if(oclr){ gestaoDestSel = null; renderGestaoDest(); renderOfensores(); return; }
     const ofr = e.target.closest('.ofen-row');
@@ -2905,6 +2949,9 @@ function mapBaseRow(row){
     servico:   cell(row,'C'),   // nomenclatura
     origem:    cell(row,'O'),   // origem
     destino:   cell(row,'X'),   // destino
+    preCheckOrigem:  cell(row,'V'),   // V = pré check-in na origem (chegou no CD de saída)
+    destinoETA:      cell(row,'Y'),   // Y = ETA no destino (prazo de chegada no cliente)
+    preCheckDestino: cell(row,'AF'),  // AF = pré check-in no destino (chegou no CD cliente)
     origemETA: cell(row,'P'),   // deveria chegar na origem (ETA)
     origemATA: cell(row,'Q'),   // chegou de verdade na origem (ATA)
     origemETD: cell(row,'S'),   // horário de saída PROGRAMADO da origem (deveria sair)

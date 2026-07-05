@@ -29,7 +29,7 @@ var NOME_ABA_BASE = 'Base';
 var C = {
   routeId: 1, rostering: 2, servico: 3, data: 4, trecho: 14, origem: 15,
   origemETA: 16, origemATA: 17, origemETD: 19, origemATD: 20,
-  destino: 24, destinoATA: 26,
+  preCheckOrigem: 22, destino: 24, destinoETA: 25, destinoATA: 26, preCheckDestino: 32,
   estado: 39, substatus: 40, pacotes: 37, motivoCancel: 42, causaRaiz: 43
 };
 
@@ -66,7 +66,10 @@ function enviarHistoricoSupabase() {
         resultado: txt(r[C.substatus - 1]),
         pacotes: paraInt(r[C.pacotes - 1]),
         motivo_cancelamento: txt(r[C.motivoCancel - 1]),
-        causa_raiz: txt(r[C.causaRaiz - 1])
+        causa_raiz: txt(r[C.causaRaiz - 1]),
+        pre_check_origem: txt(r[C.preCheckOrigem - 1]),
+        pre_check_destino: txt(r[C.preCheckDestino - 1]),
+        destino_eta: txt(r[C.destinoETA - 1])
       };
     }
 
@@ -90,7 +93,10 @@ function enviarHistoricoSupabase() {
         resultado: (dATA < dETA) ? 'No prazo' : 'Atrasado',
         pacotes: paraInt(r[C.pacotes - 1]),
         motivo_cancelamento: null,
-        causa_raiz: null
+        causa_raiz: null,
+        pre_check_origem: txt(r[C.preCheckOrigem - 1]),
+        pre_check_destino: txt(r[C.preCheckDestino - 1]),
+        destino_eta: txt(r[C.destinoETA - 1])
       };
     }
   }

@@ -987,6 +987,13 @@
           <div id="watch-list" class="watch-wrap"></div>
         </div>
         <div class="panel" style="margin-bottom:18px">
+          <h3>📌 Rotas que precisam de ocorrência <span class="hint"><b id="alertas-ocor-cnt">0</b> · constam atraso, sem ocorrência lançada e sem pré check-in dentro do prazo · clique pra abrir</span></h3>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Destino</th><th>Motivo</th><th>Status SM</th><th>Prazo de chegada</th></tr></thead>
+            <tbody id="alertas-ocor-tbody"></tbody>
+          </table></div>
+        </div>
+        <div class="panel" style="margin-bottom:18px">
           <h3>⚠ Atrasos sem ocorrência — risco <span class="hint"><b id="alertas-risco-cnt">0</b> · finalizadas atrasadas sem justificativa (últimos 3 dias) · clique pra ver o detalhe</span></h3>
           <div class="table-scroll short"><table>
             <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Tipo</th><th>Estado</th><th>Status</th><th>Ocorrência</th></tr></thead>
@@ -1163,6 +1170,6 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>
