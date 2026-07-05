@@ -1124,8 +1124,8 @@ async function fetchAtrasosSemOcorrencia(){
 }
 // Chegou no prazo pelo GPS: pré check-in no destino antes do ETA de destino (Base como referência)
 function preCheckinNoPrazo(r){
-  const pc = parseAnyDate(r.pre_check_destino);
-  const eta = parseAnyDate(r.destino_eta);
+  const pc = parseDateBR(r.pre_check_destino);   // aceita BR e ISO, devolve string ISO (ou null)
+  const eta = parseDateBR(r.destino_eta);
   return !!(pc && eta && new Date(pc) < new Date(eta));
 }
 function renderAlertasRisco(){
@@ -1137,19 +1137,13 @@ function renderAlertasRisco(){
     return `<tr class="rel-click crit" data-rrid="${rid}"><td>${relIdCell(r)}</td><td class="mono">${escapeHtml(r.servico||'—')}</td><td>${escapeHtml(tipoRota(r.servico))}</td><td>${fmtHora(r.origem_eta)}</td><td>${fmtHora(r.destino_eta)}</td><td>${escapeHtml(r.estado||'—')}</td><td>${escapeHtml(r.resultado||'—')}</td><td><span class="ocor-alert">sem ocorrência</span></td></tr>`;
   }).join('');
 }
-// Parser tolerante: aceita ISO (yyyy-MM-dd HH:mm, vindo do Supabase) e BR (dd/mm/yyyy HH:mm).
-function parseAnyDate(v){
-  if(v instanceof Date) return isNaN(v.getTime()) ? null : v;
-  const str = String(v||'').trim(); if(!str) return null;
-  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2}))?/);
-  if(m) return new Date(+m[1], +m[2]-1, +m[3], +m[4]||0, +m[5]||0);
-  return parseDateBR(str);
-}
-// Mostra um horário (Date ou string ISO/BR) formatado; '—' quando vazio.
+// Mostra um horário formatado. Aceita string BR (dd/mm/yyyy HH:mm), string ISO
+// (yyyy-MM-dd HH:mm, vinda do Supabase) ou Date. parseDateBR normaliza tudo pra string ISO,
+// que é o que fmtDateTime consome. '—' quando vazio/ inválido.
 function fmtHora(v){
-  const d = (v instanceof Date) ? v : parseAnyDate(v);
-  if(d && !isNaN(d.getTime())) return fmtDateTime(d) || '—';
-  return v ? escapeHtml(String(v)) : '—';
+  if(v == null || v === '') return '—';
+  const iso = parseDateBR(v);
+  return iso ? fmtDateTime(iso) : escapeHtml(String(v));
 }
 // Rotas AO VIVO que precisam de ocorrência (constam atraso, sem ocorrência, pré check-in não salvou)
 function renderAlertasPrecisaOcorrencia(){
