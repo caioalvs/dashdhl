@@ -517,7 +517,7 @@ function enrichData(){
     // parado E já venceu o prazo. Parado dentro do prazo = ainda no prazo, NÃO conta.
     const constaAtraso = d.risco === 'vermelho' || /atrasad/i.test(d.substatus || '') || (d.parado && venceuPrazo);
     // Precisa de ocorrência: consta atraso, SEM ocorrência lançada, e o pré check-in NÃO salvou
-    d.precisaOcorrencia = constaAtraso && isNA(d.ocorrencia) && !d.preCheckNoPrazo && !d.finalizada && !d.naoIniciada && !d.ehXpt;
+    d.precisaOcorrencia = constaAtraso && isNA(d.ocorrencia) && isNA(d.causaRaiz) && !d.preCheckNoPrazo && !d.finalizada && !d.naoIniciada && !d.ehXpt;
 
     // Origem-destino: pela NOMENCLATURA (col F da aba) descobre as siglas/nomes;
     // a sigla puxa o endereço do service center na aba Links.
@@ -1119,6 +1119,14 @@ async function fetchAtrasosSemOcorrencia(){
     .filter(r => /finaliz/i.test(r.estado||'') && /atrasad/i.test(r.resultado||''))
     .filter(r => !relJustificativa(r))    // sem ocorrência em sistema E sem causa raiz
     .filter(r => !preCheckinNoPrazo(r));  // pré check-in no destino antes do prazo = chegou no prazo (GPS), não precisa ocorrência
+  // dedupe: 1 linha por protocolo|trecho. O mesmo trecho pode ter registro fase ETD (viagem) e
+  // fase ETA (chegada na origem) — é a MESMA viagem, então mostra uma vez só, preferindo a ETD.
+  const _rDedup = {};
+  for(const r of _riscoRows){
+    const k = (r.rostering_id || r.route_id || '') + '|' + (r.trecho || '');
+    if(!_rDedup[k] || (_rDedup[k].fase !== 'ETD' && r.fase === 'ETD')) _rDedup[k] = r;
+  }
+  _riscoRows = Object.values(_rDedup);
   _riscoRows.sort((a,b) => String(b.data||'').localeCompare(String(a.data||'')));  // data ISO (yyyy-MM-dd) — mais recentes no topo
   renderAlertasRisco();
 }
@@ -1811,7 +1819,7 @@ function relUsuario(){
 async function fetchAcoes(ref){
   if(!SUPABASE.url || !ref) return [];
   try {
-    const r = await fetch(`${SUPABASE.url}/rest/v1/acoes?ref=eq.${encodeURIComponent(ref)}&order=criado_em.asc`, { headers:{ apikey:SUPABASE.anon, Authorization:'Bearer '+SUPABASE.anon } });
+    const r = await fetch(`${SUPABASE.url}/rest/v1/acoes?ref=eq.${encodeURIComponent(ref)}&order=criado_em.asc`, { headers:{ apikey:SUPABASE.anon, Authorization:'Bearer '+SUPABASE.anon }, cache:'no-store' });
     return r.ok ? await r.json() : [];
   } catch(e){ return []; }
 }
