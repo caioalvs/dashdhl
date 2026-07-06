@@ -1682,17 +1682,19 @@ function atrasoMinutos(r){
 function _fmtMin(m){ return m>=60 ? (Math.floor(m/60)+'h'+String(m%60).padStart(2,'0')) : (m+' min'); }
 function renderRelSeveridade(){
   const atr  = _relData.fin.filter(r => /atrasad/i.test(r.resultado||''));
-  const mins = atr.map(atrasoMinutos).filter(m => m!=null && m>0);
+  const mins = atr.map(atrasoMinutos).filter(m => m!=null && m>0).sort((a,b)=>a-b);
   const cobertura = atr.length ? Math.round(mins.length/atr.length*100) : 0;
-  const media = mins.length ? Math.round(mins.reduce((a,b)=>a+b,0)/mins.length) : 0;
+  // mediana (atraso típico) — robusta a outliers de viagens muito longas; média distorce
+  const mediana = mins.length ? mins[Math.floor(mins.length/2)] : 0;
+  const pior    = mins.length ? mins[mins.length-1] : 0;
   const buckets = [0,0,0,0];  // <15 · 15-60 · 1-3h · >3h
   mins.forEach(m => { if(m<15) buckets[0]++; else if(m<60) buckets[1]++; else if(m<180) buckets[2]++; else buckets[3]++; });
   const el = document.querySelector('#rel-sev-kpi');
   if(el){
     el.innerHTML = mins.length
-      ? `<div class="comp-big">${_fmtMin(media)}</div>`
-        + `<div class="comp-sub">atraso médio · ${mins.length.toLocaleString('pt-BR')} de ${atr.length.toLocaleString('pt-BR')} atrasos com horário</div>`
-        + `<div class="comp-gap">cobertura ${cobertura}% (o resto não tem ETA registrado)</div>`
+      ? `<div class="comp-big">${_fmtMin(mediana)}</div>`
+        + `<div class="comp-sub">atraso típico (mediana) · ${mins.length.toLocaleString('pt-BR')} de ${atr.length.toLocaleString('pt-BR')} atrasos com horário</div>`
+        + `<div class="comp-gap">pior caso ${_fmtMin(pior)} · cobertura ${cobertura}%</div>`
       : `<div class="comp-sub" style="padding:22px 0">Sem atrasos com horário de chegada e ETA no período pra medir severidade.</div>`;
   }
   const cv = document.querySelector('#chart-rel-severidade');
@@ -1700,16 +1702,30 @@ function renderRelSeveridade(){
     data:{ labels:['< 15 min','15–60 min','1–3 h','> 3 h'], datasets:[{ data:buckets, backgroundColor:['#16a34a','#ea9a00','#f97316','#D40511'], borderRadius:4, borderWidth:0 }] },
     options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } }, plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:c=>`${c.parsed.y} atrasos` } } } } }); }
 }
-// === Pareto de causas raiz dos atrasos (80/20) — causa raiz normalizada por acento/caixa ===
+// Extrai os motivos de uma justificativa: "SGO1→BRXGO1: Atraso no carregamento · ...: X, Y"
+// -> ['Atraso no carregamento','X','Y']. Também aceita texto simples (causa raiz).
+function _motivosDe(justStr){
+  if(!justStr) return [];
+  const out = [];
+  String(justStr).split('·').forEach(seg => {
+    let part = seg.trim(); if(!part) return;
+    const ci = part.indexOf(':');
+    if(ci >= 0) part = part.slice(ci + 1);   // remove o rótulo do trecho
+    part.split(',').forEach(x => { const t = x.trim(); if(t) out.push(t); });
+  });
+  return out;
+}
+// === Pareto dos MOTIVOS dos atrasos (80/20) — vem da ocorrência; normaliza acento/caixa ===
 function renderRelPareto(){
   const atr = _relData.fin.filter(r => /atrasad/i.test(r.resultado||''));
   const grupos = {};
   atr.forEach(r => {
-    const raw = fixMojibake(String(r.causa_raiz||'').trim());
-    if(!raw) return;
-    const key = normKey(raw) || raw.toLowerCase();
-    if(!grupos[key]) grupos[key] = { label: raw, n:0 };
-    grupos[key].n++;
+    _motivosDe(relJustificativa(r)).forEach(m => {
+      const raw = fixMojibake(m.trim()); if(!raw) return;
+      const key = normKey(raw) || raw.toLowerCase();
+      if(!grupos[key]) grupos[key] = { label: raw, n:0 };
+      grupos[key].n++;
+    });
   });
   const arr = Object.values(grupos).sort((a,b)=>b.n-a.n);
   const totalCausa = arr.reduce((sm,g)=>sm+g.n,0);
@@ -1717,7 +1733,7 @@ function renderRelPareto(){
   let acc = 0;
   const cum = top.map(g => { acc += g.n; return totalCausa ? Math.round(acc/totalCausa*100) : 0; });
   const st = document.querySelector('#rel-pareto-status');
-  if(st) st.textContent = totalCausa ? `${totalCausa.toLocaleString('pt-BR')} atrasos com causa raiz registrada` : 'nenhum atraso com causa raiz registrada no período';
+  if(st) st.textContent = totalCausa ? `${totalCausa.toLocaleString('pt-BR')} motivos registrados nas ocorrências` : 'nenhum motivo de atraso registrado no período';
   const cv = document.querySelector('#chart-rel-pareto');
   if(cv && typeof Chart!=='undefined'){ destroyChart('relPareto'); charts.relPareto = new Chart(cv, {
     data:{ labels: top.map(g => g.label.length>32 ? g.label.slice(0,30)+'…' : g.label), datasets:[
