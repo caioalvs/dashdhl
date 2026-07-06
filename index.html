@@ -270,6 +270,12 @@
   #rel-kpis .kpi-card.clickable { cursor:pointer; }
   .rel-kpi-go { position:absolute; bottom:10px; right:12px; font-size:10px; font-weight:700; color:var(--text-dim); opacity:0; transition:opacity .12s ease; }
   #rel-kpis .kpi-card.clickable:hover .rel-kpi-go { opacity:1; color:var(--yellow-dim); }
+  .comp-box { text-align:center; padding:4px 0 12px; }
+  .comp-big { font-family:var(--font-num); font-size:42px; font-weight:800; line-height:1.05; color:var(--text); }
+  .comp-big.good { color:var(--green); } .comp-big.warn { color:var(--amber); } .comp-big.bad { color:var(--red); }
+  .comp-big .rel-delta { font-size:13px; vertical-align:middle; }
+  .comp-sub { font-size:13px; color:var(--grey); margin-top:8px; }
+  .comp-gap { font-size:12px; color:var(--grey); margin-top:3px; }
   @keyframes relFlash { 0%{ box-shadow:0 0 0 0 var(--yellow); } 100%{ box-shadow:0 0 0 5px rgba(255,204,0,0); } }
   .rel-flash { animation: relFlash 1s ease; }
   .chart-box-sm { position:relative; height: 180px; }
@@ -1094,6 +1100,18 @@
         <div class="kpi-row" id="rel-kpis"></div>
         <div id="rel-wrap">
           <div class="rel-2col">
+            <div class="panel" id="rel-comp-panel">
+              <h3>Compliance de ocorrência <span class="hint">% de atrasos justificados · quanto maior, melhor</span></h3>
+              <div id="rel-comp-kpi" class="comp-box"></div>
+              <div style="height:150px;position:relative"><canvas id="chart-rel-compliance"></canvas></div>
+            </div>
+            <div class="panel" id="rel-sev-panel">
+              <h3>Severidade do atraso <span class="hint">quão atrasado, não só quantos</span></h3>
+              <div id="rel-sev-kpi" class="comp-box"></div>
+              <div style="height:150px;position:relative"><canvas id="chart-rel-severidade"></canvas></div>
+            </div>
+          </div>
+          <div class="rel-2col">
             <div class="panel" id="rel-pont-panel">
               <h3>Pontualidade <span class="hint">no prazo × atrasado · clique em "Atrasado"</span></h3>
               <div style="height:230px;position:relative"><canvas id="chart-rel-sla"></canvas></div>
@@ -1124,6 +1142,10 @@
               <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Tipo</th><th>Destino</th><th>Ocorrência / justificativa</th></tr></thead>
               <tbody id="rel-atr-tbody"></tbody>
             </table></div>
+          </div>
+          <div class="panel" id="rel-pareto-panel" style="margin-bottom:18px">
+            <h3>Causas raiz dos atrasos — Pareto <span class="hint"><span id="rel-pareto-status"></span> · barra = nº de atrasos, linha = % acumulado</span></h3>
+            <div style="height:300px;position:relative"><canvas id="chart-rel-pareto"></canvas></div>
           </div>
           <div class="panel" id="rel-canc-panel" style="margin-bottom:18px">
             <h3 id="rel-canc-head">Cancelamentos por motivo</h3>
@@ -1170,6 +1192,6 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=15"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

@@ -1471,7 +1471,10 @@ function computeRelKpis(rows){
   const atraso  = fin.filter(r => /atrasad/i.test(r.resultado||'')).length;
   const pacotes = fin.reduce((s,r)=>s+(parseInt(r.pacotes,10)||0),0);
   const infrut  = canc.filter(r => /infrut/i.test(r.motivo_cancelamento||'')).length;
-  return { total, noPrazo, pct: total?Math.round(noPrazo/total*100):0, atraso, pacotes, canc: canc.length, infrut };
+  const _atrNeed = fin.filter(r => /atrasad/i.test(r.resultado||'') && !preCheckinNoPrazo(r));
+  const _just = _atrNeed.filter(r => relJustificativa(r)).length;
+  const comp = _atrNeed.length ? Math.round(_just/_atrNeed.length*100) : 100;
+  return { total, noPrazo, pct: total?Math.round(noPrazo/total*100):0, atraso, pacotes, canc: canc.length, infrut, comp };
 }
 // Selo ▲▼ do comparativo. opts: pp (pontos %), goodUp (subir é bom), neutral (sem cor de bom/ruim)
 function relDelta(cur, prev, opts){
@@ -1507,6 +1510,9 @@ async function renderRelatorios(){
   _relPrev = null;
   try { const pr = relPrevRange(start, end); const rp = await fetchHistorico(pr.start, pr.end); if(rp.ok) _relPrev = computeRelKpis(rp.rows); } catch(e){}
   renderRelResumo();
+  renderRelCompliance();
+  renderRelSeveridade();
+  renderRelPareto();
   renderRelCancelamentos();
   renderRelAtrasos();
   renderRelDestinos();
@@ -1640,6 +1646,89 @@ function renderRelDestinos(){
   const top = Object.entries(d).sort((a,b)=>b[1].n-a[1].n).slice(0,10);
   const tb = $('#rel-dest-tbody');
   if(tb) tb.innerHTML = top.length ? top.map(([dest,o])=>{ const p=Math.round((o.n-o.at)/o.n*100); const cls=p>=90?'b-verde':(p>=80?'b-amarelo':'b-vermelho'); return `<tr class="rel-click" data-dest="${escapeHtml(dest)}"><td>${escapeHtml(dest)}</td><td class="mono">${o.n}</td><td class="mono">${o.at}</td><td><span class="badge ${cls}"><span class="badge-dot"></span>${p}%</span></td></tr>`; }).join('') : `<tr><td colspan="4"><div class="empty-state">Sem dados.</div></td></tr>`;
+}
+// === Compliance de ocorrência: % de atrasos justificados (mesmo escopo da tabela de cobrança) ===
+function renderRelCompliance(){
+  const atr = _relData.fin.filter(r => /atrasad/i.test(r.resultado||'') && !preCheckinNoPrazo(r));
+  const total = atr.length;
+  const just  = atr.filter(r => relJustificativa(r)).length;
+  const pct   = total ? Math.round(just/total*100) : 100;
+  const el = document.querySelector('#rel-comp-kpi');
+  if(el){
+    const cls = pct>=90?'good':(pct>=70?'warn':'bad');
+    const P = _relPrev;
+    const delta = (P && P.comp!=null) ? relDelta(pct, P.comp, {pp:true, goodUp:true}) : '';
+    el.innerHTML = `<div class="comp-big ${cls}">${pct}% ${delta}</div>`
+      + `<div class="comp-sub">${just.toLocaleString('pt-BR')} de ${total.toLocaleString('pt-BR')} atrasos com justificativa</div>`
+      + `<div class="comp-gap">${(total-just).toLocaleString('pt-BR')} ainda sem ocorrência</div>`;
+  }
+  const porDia = {};
+  atr.forEach(r => { const d=r.data; if(!d) return; if(!porDia[d]) porDia[d]={n:0,j:0}; porDia[d].n++; if(relJustificativa(r)) porDia[d].j++; });
+  const dds = Object.keys(porDia).sort();
+  const trend = dds.map(d => Math.round(porDia[d].j/porDia[d].n*100));
+  const labels = dds.map(d => d.slice(8,10)+'/'+d.slice(5,7));
+  const cv = document.querySelector('#chart-rel-compliance');
+  if(cv && typeof Chart!=='undefined'){ destroyChart('relComp'); charts.relComp = new Chart(cv, { type:'line',
+    data:{ labels, datasets:[{ label:'% justificado', data:trend, borderColor:PALETTE.green, backgroundColor:'rgba(22,163,74,.08)', borderWidth:2, tension:.3, fill:true, spanGaps:true, pointRadius:2 }] },
+    options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ min:0, max:100, ticks:{ callback:v=>v+'%' } } }, plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:c=>`${c.parsed.y}% justificado` } } } } }); }
+}
+// === Severidade do atraso: minutos de atraso e distribuição (sobre quem tem horário) ===
+function atrasoMinutos(r){
+  const chegada = parseDateBR(r.chegada);
+  const prazo = (String(r.fase||'ETD').toUpperCase()==='ETA') ? parseDateBR(r.saida_programada) : parseDateBR(r.destino_eta);
+  if(!chegada || !prazo) return null;
+  return Math.round((new Date(chegada) - new Date(prazo))/60000);
+}
+function _fmtMin(m){ return m>=60 ? (Math.floor(m/60)+'h'+String(m%60).padStart(2,'0')) : (m+' min'); }
+function renderRelSeveridade(){
+  const atr  = _relData.fin.filter(r => /atrasad/i.test(r.resultado||''));
+  const mins = atr.map(atrasoMinutos).filter(m => m!=null && m>0);
+  const cobertura = atr.length ? Math.round(mins.length/atr.length*100) : 0;
+  const media = mins.length ? Math.round(mins.reduce((a,b)=>a+b,0)/mins.length) : 0;
+  const buckets = [0,0,0,0];  // <15 · 15-60 · 1-3h · >3h
+  mins.forEach(m => { if(m<15) buckets[0]++; else if(m<60) buckets[1]++; else if(m<180) buckets[2]++; else buckets[3]++; });
+  const el = document.querySelector('#rel-sev-kpi');
+  if(el){
+    el.innerHTML = mins.length
+      ? `<div class="comp-big">${_fmtMin(media)}</div>`
+        + `<div class="comp-sub">atraso médio · ${mins.length.toLocaleString('pt-BR')} de ${atr.length.toLocaleString('pt-BR')} atrasos com horário</div>`
+        + `<div class="comp-gap">cobertura ${cobertura}% (o resto não tem ETA registrado)</div>`
+      : `<div class="comp-sub" style="padding:22px 0">Sem atrasos com horário de chegada e ETA no período pra medir severidade.</div>`;
+  }
+  const cv = document.querySelector('#chart-rel-severidade');
+  if(cv && typeof Chart!=='undefined'){ destroyChart('relSev'); charts.relSev = new Chart(cv, { type:'bar',
+    data:{ labels:['< 15 min','15–60 min','1–3 h','> 3 h'], datasets:[{ data:buckets, backgroundColor:['#16a34a','#ea9a00','#f97316','#D40511'], borderRadius:4, borderWidth:0 }] },
+    options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } }, plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:c=>`${c.parsed.y} atrasos` } } } } }); }
+}
+// === Pareto de causas raiz dos atrasos (80/20) — causa raiz normalizada por acento/caixa ===
+function renderRelPareto(){
+  const atr = _relData.fin.filter(r => /atrasad/i.test(r.resultado||''));
+  const grupos = {};
+  atr.forEach(r => {
+    const raw = fixMojibake(String(r.causa_raiz||'').trim());
+    if(!raw) return;
+    const key = normKey(raw) || raw.toLowerCase();
+    if(!grupos[key]) grupos[key] = { label: raw, n:0 };
+    grupos[key].n++;
+  });
+  const arr = Object.values(grupos).sort((a,b)=>b.n-a.n);
+  const totalCausa = arr.reduce((sm,g)=>sm+g.n,0);
+  const top = arr.slice(0,10);
+  let acc = 0;
+  const cum = top.map(g => { acc += g.n; return totalCausa ? Math.round(acc/totalCausa*100) : 0; });
+  const st = document.querySelector('#rel-pareto-status');
+  if(st) st.textContent = totalCausa ? `${totalCausa.toLocaleString('pt-BR')} atrasos com causa raiz registrada` : 'nenhum atraso com causa raiz registrada no período';
+  const cv = document.querySelector('#chart-rel-pareto');
+  if(cv && typeof Chart!=='undefined'){ destroyChart('relPareto'); charts.relPareto = new Chart(cv, {
+    data:{ labels: top.map(g => g.label.length>32 ? g.label.slice(0,30)+'…' : g.label), datasets:[
+      { type:'bar',  label:'Atrasos',      data: top.map(g=>g.n), backgroundColor:PALETTE.red, borderRadius:4, borderWidth:0, yAxisID:'y', order:2 },
+      { type:'line', label:'% acumulado',  data: cum, borderColor:'#334155', backgroundColor:'#334155', borderWidth:2, tension:.2, pointRadius:3, yAxisID:'y1', order:1 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ y:{ beginAtZero:true, position:'left', ticks:{ precision:0 } }, y1:{ beginAtZero:true, max:100, position:'right', grid:{ drawOnChartArea:false }, ticks:{ callback:v=>v+'%' } } },
+      plugins:{ legend:{ display:true, position:'bottom', labels:{ usePointStyle:true, pointStyle:'circle', padding:12 } },
+        tooltip:{ callbacks:{ label:c=> c.dataset.type==='line' ? `${c.parsed.y}% acumulado` : `${c.parsed.y} atrasos` } } } }
+  }); }
 }
 // Item de rota atrasada (identificação + trecho + ocorrência) — usado nos detalhes
 function relAtrasoItem(r){
