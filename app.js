@@ -1419,7 +1419,7 @@ async function fetchHistorico(startISO, endISO){
     let all = [], offset = 0; const page = 1000;
     const q = `${SUPABASE.url}/rest/v1/viagens_historico?select=${cols}&data=gte.${startISO}&data=lte.${endISO}&order=data.asc`;
     for(;;){
-      const r = await fetch(`${q}&limit=${page}&offset=${offset}`, { headers });
+      const r = await fetch(`${q}&limit=${page}&offset=${offset}&_cb=${Date.now()}`, { headers, cache: 'no-store' });
       if(!r.ok) return { ok:false, rows:all, err:r.status };
       const chunk = await r.json();
       all = all.concat(chunk);
