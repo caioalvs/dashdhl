@@ -2481,9 +2481,20 @@ function exportEtdCsv(){
 }
 
 /* ---- Ordenação por clique no cabeçalho da tabela (A→Z / Z→A) ------------- */
+// Chave cronológica pra células de data "DD/MM HH:MM" (ou com ano). Sem isso o sort
+// comparava texto e ordenava por DIA do mês (31/07 vinha depois de 01/08). null = não é data.
+function _cellDateKey(s){
+  const m = String(s).trim().match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:[ T](\d{1,2}):(\d{2}))?$/);
+  if(!m) return null;
+  const dd=+m[1], mm=+m[2], yy=m[3], hh=+(m[4]||0), mi=+(m[5]||0);
+  const y = yy ? (+yy < 100 ? 2000 + +yy : +yy) : new Date().getFullYear();
+  return ((y*12 + (mm-1))*31 + dd)*1440 + hh*60 + mi;
+}
 function cmpCell(a, b){
   const ta = (a && a.textContent || '').trim(), tb = (b && b.textContent || '').trim();
-  return ta.localeCompare(tb, 'pt-BR', { numeric:true, sensitivity:'base' });
+  const ka = _cellDateKey(ta), kb = _cellDateKey(tb);
+  if(ka != null && kb != null) return ka - kb;           // datas: cronológico
+  return ta.localeCompare(tb, 'pt-BR', { numeric:true, sensitivity:'base' });  // resto: texto/número
 }
 let _sortState = {};   // tbodyId -> {idx, dir}, p/ manter ordenação após re-render
 function sortTableByHeader(th){
