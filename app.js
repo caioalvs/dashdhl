@@ -369,6 +369,10 @@ function statusRank(s){
 }
 
 function enrichData(){
+  // Linhas em branco da planilha (sem protocolo e sem rota) não são viagens reais — descarta.
+  // Sem isso elas caíam no fallback de km/h (48 = Risco) e viravam destino "—" / ofensor "? → ?".
+  DASHBOARD_DATA.etd = (DASHBOARD_DATA.etd || []).filter(d => String(d.protocolo||'').trim() !== '' || String(d.rota||'').trim() !== '');
+  DASHBOARD_DATA.eta = (DASHBOARD_DATA.eta || []).filter(d => String(d.protocolo||'').trim() !== '' || String(d.rota||'').trim() !== '');
   buildSmIndex();
   buildOcorIndex();
   buildBaseIndex();
@@ -2410,6 +2414,8 @@ function bindTabs(){
       if(tab==='alertas'){ renderAlertas(); renderTrend(); fetchAtrasosSemOcorrencia(); }
       if(tab==='gestao'){ fetchGestaoTrend(); renderGestao(); Object.values(charts).forEach(c=>c.resize()); }
       if(tab==='relatorios'){ renderRelatorios(); }
+      if(tab==='validacao') renderValTable();
+      if(tab==='xpt') renderXptTable();
       saveView();
     });
   });
