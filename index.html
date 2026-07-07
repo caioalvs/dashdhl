@@ -892,6 +892,15 @@
           </table></div>
         </div>
 
+        <!-- divergência: SM baixou mas a Base ainda diz Em andamento (reconciliar) -->
+        <div class="table-wrap">
+          <div class="table-head-bar th-grey"><span class="dot"></span> Divergência SM × Base — SM baixou, Base ainda Em andamento <span class="cnt"><b id="etd-cnt-diverg">0</b> rotas</span></div>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Estado</th><th>Status SM</th><th>Ocorrência</th><th class="num">Pacotes</th></tr></thead>
+            <tbody id="etd-tbody-diverg"></tbody>
+          </table></div>
+        </div>
+
         <!-- rotas não prioritárias (REV / reversa) -->
         <div class="table-wrap">
           <div class="table-head-bar th-grey"><span class="dot"></span> Reversas — agrupadas à parte (com pacote no topo) <span class="cnt"><b id="etd-cnt-nao">0</b> rotas</span></div>
@@ -1192,6 +1201,6 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

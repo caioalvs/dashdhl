@@ -487,6 +487,14 @@ function enrichData(){
         d.risco = 'cinza';
         d.riscoTexto = 'Aguardando início';
       }
+      // Divergência: a SM já baixou (FINALIZADO) mas a Base ainda diz Em andamento. Mantém
+      // visível pra reconciliar, mas SEM risco — o km médio vira cálculo velho (a rota já parou).
+      d.divergenciaSM = (est === 'em andamento' && /finaliz/i.test(d.statusSM || ''));
+      if(d.divergenciaSM){
+        d.parado = false;
+        d.risco = 'diverg';
+        d.riscoTexto = 'SM baixou · Base em viagem';
+      }
     }
 
     // Pacotes da Base (col AK) é a fonte boa — usado pra ordenar as reversas (com pacote primeiro).
@@ -663,7 +671,9 @@ function progressCell(d){
 // Tabelas: 3 prioritárias por faixa (Q) + 1 de não prioritárias (XPT/REV)
 function renderEtdTables(rows){
   // XPT já sai no getEtdFiltered — aqui é tudo Line Haul
-  const prio   = rows.filter(d => !d.naoPrioritaria && !d.naoIniciada);
+  const prioAll = rows.filter(d => !d.naoPrioritaria && !d.naoIniciada);
+  const diverg  = prioAll.filter(d =>  d.divergenciaSM);   // SM baixou, Base ainda em viagem
+  const prio    = prioAll.filter(d => !d.divergenciaSM);
   const aguard = rows.filter(d => !d.naoPrioritaria &&  d.naoIniciada);
   const nao    = rows.filter(d =>  d.naoPrioritaria);
   const groups = { verde:[], amarelo:[], vermelho:[] };
@@ -671,6 +681,7 @@ function renderEtdTables(rows){
   fillEtdTable('verde',    groups.verde);
   fillEtdTable('amarelo',  groups.amarelo);
   fillEtdTable('vermelho', groups.vermelho);
+  fillEtdDivergencia(diverg);
   fillEtdAguardando(aguard);
   fillEtdNaoPrio(nao);
   fillEtdPosto(rows.filter(d => d.postoFiscal && !d.naoIniciada));
@@ -726,6 +737,28 @@ function fillEtdAguardando(rows){
     </tr>`; }).join('');
 }
 
+// Divergência SM × Base: SM baixou (FINALIZADO) mas a Base ainda está Em andamento.
+// Visível pra reconciliar, estado neutro — não conta como risco em nenhum indicador.
+function fillEtdDivergencia(rows){
+  const c = $('#etd-cnt-diverg'); if(c) c.textContent = rows.length;
+  const tb = $('#etd-tbody-diverg'); if(!tb) return;
+  if(!rows.length){
+    tb.innerHTML = `<tr><td colspan="9"><div class="empty-state">Nenhuma divergência SM × Base.</div></td></tr>`;
+    return;
+  }
+  tb.innerHTML = rows.map(d => `
+    <tr>
+      ${protoTd(d.protocolo)}
+      <td class="mono">${escapeHtml(d.rota)}</td>
+      <td class="mono">${escapeHtml(d.placa)}</td>
+      <td>${escapeHtml(d.destino||'—')}</td>
+      <td>${fmtDateTime(d.etaDestino)||'—'}</td>
+      <td><span class="ocor-info">${escapeHtml(d.baseEstado||'—')}</span></td>
+      <td><span class="ocor-info">${escapeHtml(d.statusSM||'—')}</span></td>
+      ${ocorCell(d)}
+      <td class="num">${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
+    </tr>`).join('');
+}
 // Tabela de Posto Fiscal — veículos com excepcionalidade a acompanhar (coluna U), km até o posto (coluna V)
 function fillEtdPosto(rows){
   $('#etd-cnt-posto').textContent = rows.length;
@@ -1122,7 +1155,16 @@ async function fetchAtrasosSemOcorrencia(){
     .filter(r => !/xpt/i.test(r.servico||''))   // XPT é operação à parte — fora do risco Line Haul
     .filter(r => /finaliz/i.test(r.estado||'') && /atrasad/i.test(r.resultado||''))
     .filter(r => !relJustificativa(r))    // sem ocorrência em sistema E sem causa raiz
-    .filter(r => !preCheckinNoPrazo(r));  // pré check-in no destino antes do prazo = chegou no prazo (GPS), não precisa ocorrência
+    .filter(r => !preCheckinNoPrazo(r))   // pré check-in no destino antes do prazo = chegou no prazo (GPS), não precisa ocorrência
+    .filter(r => {
+      // A BASE MANDA (fonte da verdade do estado atual). Se o protocolo ainda está na Base como
+      // Pendente ou Em andamento, a viagem NÃO finalizou — o "Finalizado/Atrasado" do histórico é
+      // dado velho (a Base é janela rolante; o Supabase guardou um estado que já mudou). Descarta.
+      const b = BASE_INDEX[String(r.rostering_id||'').trim()] || BASE_ROUTE_INDEX[String(r.route_id||'').trim()];
+      if(!b) return true;   // saiu da janela da Base (histórico antigo, sem como conferir) — mantém
+      const est = String(b.estado||'').trim().toLowerCase();
+      return est !== 'pendente' && !/andamento/.test(est);
+    });
   // dedupe: 1 linha por protocolo|trecho. O mesmo trecho pode ter registro fase ETD (viagem) e
   // fase ETA (chegada na origem) — é a MESMA viagem, então mostra uma vez só, preferindo a ETD.
   const _rDedup = {};
