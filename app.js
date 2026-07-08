@@ -2377,7 +2377,7 @@ function renderAll(){
   refreshEtd();
   renderXptTable();
   renderValTable();
-  $('#badgeMapa').textContent = etdAtivos.filter(d => !d.naoPrioritaria && !d.naoIniciada).length;
+  $('#badgeMapa').textContent = etdAtivos.filter(d => !d.naoPrioritaria && !d.naoIniciada && !d.divergenciaSM).length;
   // resumo útil no masthead (substitui o subtítulo decorativo)
   const etaAtras = DASHBOARD_DATA.eta.filter(d => d.classificacao === 'vermelho').length;
   const etdCrit  = etdAtivos.filter(d => !d.naoPrioritaria && (d.risco === 'vermelho' || d.parado)).length;
@@ -2778,7 +2778,7 @@ function renderFleetMap(){
   _map.invalidateSize();
   _fleetLayer.clearLayers();
   const rows = (DASHBOARD_DATA.etd || []).filter(d =>
-    !d.naoPrioritaria && !d.finalizada && !d.naoIniciada &&
+    !d.naoPrioritaria && !d.finalizada && !d.naoIniciada && !d.divergenciaSM &&
     mapBands[d.risco] !== false &&
     (!mapFocus || d.protocolo === mapFocus));
   let plotted = 0, np = 0, ri = 0, at = 0, semLoc = 0;
