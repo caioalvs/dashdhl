@@ -248,7 +248,7 @@
   @media (max-width:900px){ .rel-2col { grid-template-columns:1fr; } }
   #rel-custom { align-items:center; gap:8px; flex-wrap:wrap; }
   #rel-custom label { font-size:12px; color:var(--text-dim); display:flex; align-items:center; gap:5px; }
-  #rel-custom input[type=date] { border:1px solid var(--border); border-radius:8px; padding:6px 8px; font-family:inherit; font-size:12px; background:var(--bg-panel); color:var(--text); }
+  #rel-custom input[type=date], #rel-custom input[type=datetime-local] { border:1px solid var(--border); border-radius:8px; padding:6px 8px; font-family:inherit; font-size:12px; background:var(--bg-panel); color:var(--text); }
   #rel-custom-aplicar { background:var(--yellow); border:none; color:#5d4a00; font-weight:700; font-size:12px; padding:7px 14px; border-radius:8px; cursor:pointer; }
   .rel-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
   .rel-chip { background:var(--bg-panel-2); border:1px solid var(--border); color:var(--text-dim); font-size:11.5px; font-weight:600; padding:5px 11px; border-radius:100px; cursor:pointer; transition:border-color .12s ease, color .12s ease; }
@@ -276,6 +276,37 @@
   .comp-big .rel-delta { font-size:13px; vertical-align:middle; }
   .comp-sub { font-size:13px; color:var(--grey); margin-top:8px; }
   .comp-gap { font-size:12px; color:var(--grey); margin-top:3px; }
+  .proj-impacto { margin-top:10px; padding-top:9px; border-top:1px dashed var(--border); display:flex; flex-wrap:wrap; gap:6px 7px; align-items:center; justify-content:center; }
+  .proj-imp-lbl { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-dim); font-weight:700; }
+  .proj-imp-item { font-size:11.5px; background:var(--bg-panel-2); border:1px solid var(--border); border-radius:100px; padding:3px 10px; color:var(--text); }
+  .proj-imp-item b { color:var(--red); font-family:var(--font-num); }
+  .leaflet-popup-content .bar-mini.bm-pop { min-width:130px; margin:5px 0; }
+  .leaflet-popup-content .bm-track { height:12px; }
+  .ind-expand { background:var(--bg-panel-2); border:1px solid var(--border); border-radius:7px; width:26px; height:24px; cursor:pointer; color:var(--text-dim); font-size:13px; line-height:1; flex:0 0 auto; margin-left:6px; transition:border-color .12s ease, color .12s ease, background .12s ease; }
+  .ind-expand:hover { color:var(--text); border-color:var(--yellow-dim); background:var(--yellow-soft); }
+  .ind-modal { position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:2000; display:flex; align-items:center; justify-content:center; padding:24px; opacity:0; transition:opacity .2s ease; }
+  .ind-modal.open { opacity:1; }
+  .ind-modal-box { background:var(--bg-panel); border-radius:var(--radius); box-shadow:var(--shadow-lg); width:min(1240px,96vw); max-height:90vh; display:flex; flex-direction:column; overflow:hidden; transform:translateY(10px); transition:transform .2s ease; }
+  .ind-modal-tbl th, .ind-modal-tbl td { padding:5px 9px; font-size:11px; }
+  .ind-modal-tbl td.mono { white-space:normal; word-break:break-word; line-height:1.35; }
+  .ind-modal-tbl .badge { font-size:10px; padding:2px 7px; }
+  .ind-modal.open .ind-modal-box { transform:none; }
+  .ind-modal-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; border-bottom:1px solid var(--border); }
+  .ind-modal-head b { font-family:var(--font-head); font-size:14px; font-weight:700; }
+  .ind-modal-close { background:var(--bg-panel-2); border:1px solid var(--border); border-radius:8px; width:30px; height:30px; cursor:pointer; font-size:13px; color:var(--text-dim); flex:0 0 auto; }
+  .ind-modal-close:hover { color:var(--text); border-color:var(--yellow-dim); }
+  .ind-modal-scroll { overflow:auto; }
+  .ind-modal-tbl { width:100%; }
+  .ind-modal-tabs { display:flex; gap:6px; margin-left:auto; margin-right:10px; }
+  .ind-tab { background:var(--bg-panel-2); border:1px solid var(--border); color:var(--text-dim); font-size:12px; font-weight:700; padding:6px 13px; border-radius:100px; cursor:pointer; transition:background .12s ease, border-color .12s ease, color .12s ease; }
+  .ind-tab:hover { color:var(--text); border-color:var(--yellow-dim); }
+  .ind-tab.active { background:var(--yellow); border-color:var(--yellow); color:#5d4a00; }
+  .proj-tri { display:flex; gap:9px; justify-content:center; margin:2px 0 6px; }
+  .proj-stat { flex:1; text-align:center; padding:9px 6px; border-radius:12px; background:var(--bg-panel-2); border:1px solid var(--border); display:flex; flex-direction:column; gap:3px; }
+  .proj-stat-cruz { background:var(--yellow-soft); border-color:var(--yellow-dim); }
+  .proj-stat-val { font-family:var(--font-num); font-size:25px; font-weight:800; line-height:1; color:var(--text); }
+  .proj-stat-val.good{color:var(--green);} .proj-stat-val.warn{color:var(--amber);} .proj-stat-val.bad{color:var(--red);}
+  .proj-stat-lbl { font-size:10px; color:var(--text-dim); font-weight:600; }
   @keyframes relFlash { 0%{ box-shadow:0 0 0 0 var(--yellow); } 100%{ box-shadow:0 0 0 5px rgba(255,204,0,0); } }
   .rel-flash { animation: relFlash 1s ease; }
   .chart-box-sm { position:relative; height: 180px; }
@@ -1093,6 +1124,9 @@
           </div>
         </div>
         <div class="rel-periodos">
+          <button class="rel-per-btn" data-per="6h">6h</button>
+          <button class="rel-per-btn" data-per="12h">12h</button>
+          <button class="rel-per-btn" data-per="24h">24h</button>
           <button class="rel-per-btn" data-per="hoje">Hoje</button>
           <button class="rel-per-btn active" data-per="7d">7 dias</button>
           <button class="rel-per-btn" data-per="mes">Mês</button>
@@ -1101,8 +1135,8 @@
           <button class="rel-per-btn" data-per="ano">Ano</button>
           <button class="rel-per-btn" id="rel-custom-btn">📅 Período…</button>
           <div id="rel-custom" style="display:none">
-            <label>de <input type="date" id="rel-custom-ini"></label>
-            <label>até <input type="date" id="rel-custom-fim"></label>
+            <label>de <input type="datetime-local" id="rel-custom-ini"></label>
+            <label>até <input type="datetime-local" id="rel-custom-fim"></label>
             <button id="rel-custom-aplicar">Aplicar</button>
           </div>
         </div>
@@ -1110,14 +1144,25 @@
         <div id="rel-wrap">
           <div class="rel-2col">
             <div class="panel" id="rel-comp-panel">
-              <h3>Compliance de ocorrência <span class="hint">% de atrasos justificados · quanto maior, melhor</span></h3>
+              <h3>Compliance de ocorrência <span class="hint">% de atrasos justificados · quanto maior, melhor</span><button class="ind-expand" onclick="openIndicador('compliance')" title="Ver os dados deste indicador">⤢</button></h3>
               <div id="rel-comp-kpi" class="comp-box"></div>
               <div style="height:150px;position:relative"><canvas id="chart-rel-compliance"></canvas></div>
             </div>
             <div class="panel" id="rel-sev-panel">
-              <h3>Severidade do atraso <span class="hint">quão atrasado, não só quantos</span></h3>
+              <h3>Severidade do atraso <span class="hint">quão atrasado, não só quantos</span><button class="ind-expand" onclick="openIndicador('severidade')" title="Ver os dados deste indicador">⤢</button></h3>
               <div id="rel-sev-kpi" class="comp-box"></div>
               <div style="height:150px;position:relative"><canvas id="chart-rel-severidade"></canvas></div>
+            </div>
+          </div>
+          <div class="rel-2col">
+            <div class="panel" id="rel-saida-panel">
+              <h3>Pontualidade de saída <span class="hint">% que saiu no prazo (tolerância 19 min) · indicador antecedente</span><button class="ind-expand" onclick="openIndicador('saida')" title="Ver os dados deste indicador">⤢</button></h3>
+              <div id="rel-saida-kpi" class="comp-box"></div>
+              <div style="height:150px;position:relative"><canvas id="chart-rel-saida"></canvas></div>
+            </div>
+            <div class="panel" id="rel-proj-panel">
+              <h3>Projeção do SLA do mês <span class="hint">acumulado do mês · mantendo o ritmo</span><button class="ind-expand" onclick="openIndicador('projecao')" title="Ver os dados deste indicador">⤢</button></h3>
+              <div id="rel-proj" class="comp-box"></div>
             </div>
           </div>
           <div class="rel-2col">
@@ -1180,6 +1225,10 @@
           <div id="rel-recorrentes" class="rec-wrap"></div>
         </div>
         <div class="panel" style="margin-top:18px">
+          <h3>Reincidência por rota <span class="hint">rotas (nomenclatura) com maior taxa de atraso · mín. 3 viagens</span></h3>
+          <div id="rel-reinc" class="rec-wrap"></div>
+        </div>
+        <div class="panel" style="margin-top:18px">
           <h3>Calendário de atrasos <span class="hint">navegue pelos meses · clique num dia pra ver as rotas</span></h3>
           <div id="rel-calendar" class="cal-wrap"></div>
         </div>
@@ -1201,6 +1250,16 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=22"></script>
+<script src="app.js?v=29"></script>
+  <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
+    <div class="ind-modal-box">
+      <div class="ind-modal-head">
+        <b id="ind-modal-title">Detalhamento</b>
+        <div id="ind-modal-tabs" class="ind-modal-tabs"></div>
+        <button class="ind-modal-close" onclick="closeIndicador()" title="Fechar">✕</button>
+      </div>
+      <div class="ind-modal-scroll table-scroll"><table class="ind-modal-tbl" id="ind-modal-table"></table></div>
+    </div>
+  </div>
 </body>
 </html>

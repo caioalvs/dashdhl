@@ -1450,9 +1450,22 @@ const _relData = { fin: [], canc: [] };  // cache do período (filtros sem refet
 let _relRowSeq = 0; const _relRowMap = {};   // clique numa linha -> detalhe da viagem
 function relRowRef(r){ const id = _relRowSeq++; _relRowMap[id] = r; return id; }
 function relRangeEfetivo(){
-  if(_relPeriodo === 'custom' && _relStart && _relEnd)
-    return _relStart <= _relEnd ? { start:_relStart, end:_relEnd } : { start:_relEnd, end:_relStart };
+  if(_relPeriodo === 'custom' && _relStart && _relEnd){
+    const sd = _relStart.slice(0,10), ed = _relEnd.slice(0,10);   // só a data pro fetch (o timestamp filtra fino)
+    return sd <= ed ? { start:sd, end:ed } : { start:ed, end:sd };
+  }
   return relRange(_relPeriodo);
+}
+// Janela fina por horário de CHEGADA (Date). Vale pros botões rápidos (6h/12h/24h) e pro custom com hora.
+function relJanela(){
+  const h = { '6h':6, '12h':12, '24h':24 }[_relPeriodo];
+  if(h) return { ini: new Date(Date.now() - h*3600e3), fim: new Date() };
+  if(_relPeriodo === 'custom' && _relStart && _relEnd && (String(_relStart).includes('T') || String(_relEnd).includes('T'))){
+    const a = new Date(_relStart), b = new Date(_relEnd);
+    if(isNaN(a) || isNaN(b)) return null;
+    return (a <= b) ? { ini:a, fim:b } : { ini:b, fim:a };
+  }
+  return null;
 }
 // célula "ID da viagem" com selo Protocolo / Travel ID
 function relIdCell(r){
@@ -1466,7 +1479,7 @@ async function fetchHistorico(startISO, endISO){
   // Colunas SEMPRE existentes + colunas opcionais (adicionadas por migração). Se as opcionais
   // ainda não existem no banco (ou o cache de schema do PostgREST está velho), o select inteiro
   // falharia e o histórico sumiria — por isso caímos pro básico automaticamente.
-  const core  = 'rostering_id,route_id,servico,estado,resultado,pacotes,chegada,saida_programada,causa_raiz,origem,destino,motivo_cancelamento,trecho,data,fase';
+  const core  = 'rostering_id,route_id,servico,estado,resultado,pacotes,chegada,saida_programada,saida_real,causa_raiz,origem,destino,motivo_cancelamento,trecho,data,fase';
   const extra = ',pre_check_destino,destino_eta,origem_eta';
   const headers = { apikey: SUPABASE.anon, Authorization: 'Bearer ' + SUPABASE.anon };
   async function pull(cols){
@@ -1486,11 +1499,15 @@ async function fetchHistorico(startISO, endISO){
   try {
     let res = await pull(core + extra);   // tenta com ETA origem/destino + pré check-in
     if(!res.ok) res = await pull(core);   // coluna nova ausente / schema velho → básico (nunca some)
+    if(res && res.rows) res.rows.forEach(r => { r.resultado = resultadoTol(r); });  // tolerância na chegada (ETA/ETD)
     return res;
   } catch(e){ return { ok:false, rows:[], err:'rede' }; }
 }
 function relRange(key){
   const end = new Date(), start = new Date();
+  const horas = { '6h':6, '12h':12, '24h':24 };
+  const fmtH = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  if(horas[key]){ start.setDate(end.getDate() - 1); return { start: fmtH(start), end: fmtH(end) }; }  // 2 dias; corte fino é por timestamp
   const dias = { hoje:0, '7d':6, mes:29, tri:89, sem:179, ano:364 };
   start.setDate(end.getDate() - (dias[key] != null ? dias[key] : 6));
   const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -1520,7 +1537,31 @@ function computeRelKpis(rows){
   const _atrNeed = fin.filter(r => /atrasad/i.test(r.resultado||'') && !preCheckinNoPrazo(r));
   const _just = _atrNeed.filter(r => relJustificativa(r)).length;
   const comp = _atrNeed.length ? Math.round(_just/_atrNeed.length*100) : 100;
-  return { total, noPrazo, pct: total?Math.round(noPrazo/total*100):0, atraso, pacotes, canc: canc.length, infrut, comp };
+  const _sc = fin.map(r=>saidaNoPrazo(r)).filter(v=>v!==null);
+  const saidaPct = _sc.length ? Math.round(_sc.filter(Boolean).length/_sc.length*100) : null;
+  const pacAtraso = fin.filter(r=>/atrasad/i.test(r.resultado||'')).reduce((s,r)=>s+(parseInt(r.pacotes,10)||0),0);
+  return { total, noPrazo, pct: total?Math.round(noPrazo/total*100):0, atraso, pacotes, canc: canc.length, infrut, comp, saidaPct, pacAtraso };
+}
+// Tolerância aplicada às 3 fases (CPT/saída, ETA e ETD chegada): até X min depois do horário
+// oficial ainda conta como no prazo. Ex.: oficial 03:00 → 03:19 no prazo, 03:20 atraso.
+const TOLERANCIA_MIN = 19;
+// Saiu no prazo: saída real <= saída programada + tolerância. null = sem dado pra medir.
+function saidaNoPrazo(r){
+  const real = parseDateBR(r.saida_real), prog = parseDateBR(r.saida_programada);
+  if(!real || !prog) return null;
+  return new Date(real).getTime() <= new Date(prog).getTime() + TOLERANCIA_MIN*60000;
+}
+// Tolerância na CHEGADA (ETA/ETD): só PERDOA atrasos pequenos — nunca transforma "no prazo" em
+// atraso (não sobrescreve a avaliação da Base). Se o banco já diz "No prazo", mantém. Se diz
+// "Atrasado" mas a chegada real ficou dentro da tolerância do horário oficial (ETA: Origem ETA;
+// ETD: destino_eta), resgata pra "No prazo".
+function resultadoTol(r){
+  if(/no prazo/i.test(r.resultado||'')) return r.resultado;
+  const isEta = (r.fase||'ETD')==='ETA';
+  const oficial = parseDateBR(isEta ? r.saida_programada : r.destino_eta);
+  const real = parseDateBR(r.chegada);
+  if(oficial && real && new Date(real).getTime() <= new Date(oficial).getTime() + TOLERANCIA_MIN*60000) return 'No prazo';
+  return r.resultado || '';
 }
 // Selo ▲▼ do comparativo. opts: pp (pontos %), goodUp (subir é bom), neutral (sem cor de bom/ruim)
 function relDelta(cur, prev, opts){
@@ -1540,7 +1581,9 @@ async function renderRelatorios(){
   const st = $('#rel-status');
   const { start, end } = relRangeEfetivo();
   const hint = $('#rel-periodo-hint');
-  if(hint) hint.textContent = `${start.split('-').reverse().join('/')} — ${end.split('-').reverse().join('/')}`;
+  const _jn = relJanela();
+  const _fdt = v => { const d=new Date(v); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+  if(hint) hint.textContent = _jn ? `${_fdt(_jn.ini)} — ${_fdt(_jn.fim)} · por chegada` : `${start.split('-').reverse().join('/')} — ${end.split('-').reverse().join('/')}`;
   if(st) st.textContent = 'Carregando…';
   const res = await fetchHistorico(start, end);
   if(!res.ok && !res.rows.length){
@@ -1550,19 +1593,38 @@ async function renderRelatorios(){
   }
   _relData.fin  = res.rows.filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r) && relFaseMatch(r));
   _relData.canc = res.rows.filter(r => /cancel/i.test(r.estado||'') && relTipoMatch(r) && relFaseMatch(r));
+  // Janela de HORAS: corte fino pelo timestamp de chegada (o campo data é só data).
+  const _jan = relJanela();
+  if(_jan){
+    const inWin = r => { const t = parseDateBR(r.chegada); if(!t) return false; const dt = new Date(t); return dt >= _jan.ini && dt <= _jan.fim; };
+    _relData.fin  = _relData.fin.filter(inWin);
+    _relData.canc = _relData.canc.filter(inWin);
+  }
   _relCancMotivo = null; _relAtrasoTipo = null;
   _relRowSeq = 0; for(const kk in _relRowMap) delete _relRowMap[kk];
-  // período anterior (comparativo ▲▼) — não bloqueia se falhar
+  // período anterior (comparativo ▲▼) — não se aplica quando há janela de horário
   _relPrev = null;
-  try { const pr = relPrevRange(start, end); const rp = await fetchHistorico(pr.start, pr.end); if(rp.ok) _relPrev = computeRelKpis(rp.rows); } catch(e){}
+  if(!_jan){ try { const pr = relPrevRange(start, end); const rp = await fetchHistorico(pr.start, pr.end); if(rp.ok) _relPrev = computeRelKpis(rp.rows); } catch(e){} }
+  // mês corrente (projeção) — fetch independente do período selecionado
+  _relMes = null;
+  try {
+    const now = new Date();
+    const mStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    const fmtD = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const rm = await fetchHistorico(mStart, fmtD(now));
+    if(rm.ok) _relMes = rm.rows;
+  } catch(e){}
   renderRelResumo();
   renderRelCompliance();
   renderRelSeveridade();
+  renderRelSaidaPontualidade();
+  renderRelProjecao();
   renderRelPareto();
   renderRelCancelamentos();
   renderRelAtrasos();
   renderRelDestinos();
   renderRelRecorrentes();
+  renderRelReincidencia();
   renderRelCalendar();
 }
 // ocorrência em sistema (aba Ocorrências) pelo protocolo; senão a causa raiz do histórico
@@ -1572,6 +1634,72 @@ function relJustificativa(r){
   const c = (r.causa_raiz||'').trim();
   return fixMojibake(c) || '';
 }
+// ===== Expandir indicador: modal com o detalhamento das linhas que compõem o número =====
+function _indBadge(cls,txt){ return `<span class="badge ${cls}"><span class="badge-dot"></span>${txt}</span>`; }
+function _indOcor(r){ const j=relJustificativa(r); return j?`<span class="ocor-info">${escapeHtml(j)}</span>`:'<span class="ocor-empty">sem ocorrência</span>'; }
+function _indResult(r){ return /atrasad/i.test(r.resultado||'') ? _indBadge('b-vermelho','Atrasado') : _indBadge('b-verde', r.resultado||'No prazo'); }
+const IND_CFG = {
+  saida: {
+    titulo: 'Pontualidade de saída',
+    cols: ['Identificação','Nomenclatura','Tipo','Saída programada (CPT)','Saída real','Saída','Ocorrência'],
+    rows: () => _relData.fin.filter(r => saidaNoPrazo(r) !== null).sort((a,b)=>(saidaNoPrazo(a)?1:0)-(saidaNoPrazo(b)?1:0)),
+    cell: r => `<td>${relIdCell(r)}</td><td class="mono">${escapeHtml(r.servico||'—')}</td><td>${escapeHtml(tipoRota(r.servico))}</td><td>${fmtHora(r.saida_programada)}</td><td>${fmtHora(r.saida_real)}</td><td>${saidaNoPrazo(r)?_indBadge('b-verde','No prazo'):_indBadge('b-vermelho','Atrasado')}</td><td>${_indOcor(r)}</td>`
+  },
+  projecao: {
+    titulo: 'Projeção do SLA do mês',
+    cols: ['Identificação','Nomenclatura','Tipo','Destino','Chegada','Resultado','Ocorrência'],
+    rows: () => (_relMes||[]).filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r) && relFaseMatch(r)).sort((a,b)=>(/atrasad/i.test(a.resultado||'')?0:1)-(/atrasad/i.test(b.resultado||'')?0:1)),
+    cell: r => `<td>${relIdCell(r)}</td><td class="mono">${escapeHtml(r.servico||'—')}</td><td>${escapeHtml(tipoRota(r.servico))}</td><td>${escapeHtml(r.destino||'—')}</td><td>${fmtHora(r.chegada)}</td><td>${_indResult(r)}</td><td>${_indOcor(r)}</td>`
+  },
+  compliance: {
+    titulo: 'Compliance de ocorrência — atrasos que precisam de justificativa',
+    cols: ['Identificação','Nomenclatura','Tipo','Resultado','Ocorrência'],
+    rows: () => _relData.fin.filter(r => /atrasad/i.test(r.resultado||'') && !preCheckinNoPrazo(r)).sort((a,b)=>(relJustificativa(a)?1:0)-(relJustificativa(b)?1:0)),
+    cell: r => `<td>${relIdCell(r)}</td><td class="mono">${escapeHtml(r.servico||'—')}</td><td>${escapeHtml(tipoRota(r.servico))}</td><td>${_indResult(r)}</td><td>${_indOcor(r)}</td>`
+  },
+  severidade: {
+    titulo: 'Severidade do atraso',
+    cols: ['Identificação','Nomenclatura','Tipo','Atraso','Chegada','ETA destino','Ocorrência'],
+    rows: () => _relData.fin.filter(r => /atrasad/i.test(r.resultado||'') && atrasoMinutos(r)!=null && atrasoMinutos(r)>0).sort((a,b)=>atrasoMinutos(b)-atrasoMinutos(a)),
+    cell: r => `<td>${relIdCell(r)}</td><td class="mono">${escapeHtml(r.servico||'—')}</td><td>${escapeHtml(tipoRota(r.servico))}</td><td class="mono">${_fmtMin(atrasoMinutos(r))}</td><td>${fmtHora(r.chegada)}</td><td>${fmtHora(r.destino_eta)}</td><td>${_indOcor(r)}</td>`
+  }
+};
+function openProjecaoFase(fase){
+  const isEta = fase==='ETA';
+  const rows = (_relMes||[]).filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r) && (isEta ? (r.fase||'ETD')==='ETA' : (r.fase||'ETD')!=='ETA'))
+    .sort((a,b)=>(/atrasad/i.test(a.resultado||'')?0:1)-(/atrasad/i.test(b.resultado||'')?0:1));
+  const cols = isEta ? ['Identificação','Nomenclatura','Tipo','Origem','ETA origem (oficial)','Chegada real','Resultado','Ocorrência']
+                     : ['Identificação','Nomenclatura','Tipo','Destino','ETA destino (oficial)','Chegada real','Resultado','Ocorrência'];
+  const cell = r => {
+    const oficial = isEta ? r.saida_programada : r.destino_eta;   // ETA: Origem ETA (saida_programada do registro ETA); ETD: destino_eta
+    const local   = isEta ? r.origem : r.destino;
+    return `<td>${relIdCell(r)}</td><td class="mono">${escapeHtml(r.servico||'—')}</td><td>${escapeHtml(tipoRota(r.servico))}</td><td>${escapeHtml(local||'—')}</td><td>${fmtHora(oficial)}</td><td>${fmtHora(r.chegada)}</td><td>${_indResult(r)}</td><td>${_indOcor(r)}</td>`;
+  };
+  const head = '<tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr>';
+  const body = rows.length ? rows.map(r=>`<tr>${cell(r)}</tr>`).join('') : `<tr><td colspan="${cols.length}"><div class="empty-state" style="padding:24px">Sem registros nesta fase.</div></td></tr>`;
+  const t=document.querySelector('#ind-modal-title'); if(t) t.textContent=`Projeção do SLA do mês · ${fase} · ${rows.length.toLocaleString('pt-BR')} viagens`;
+  const tb=document.querySelector('#ind-modal-table'); if(tb) tb.innerHTML=`<thead>${head}</thead><tbody>${body}</tbody>`;
+  document.querySelectorAll('#ind-modal-tabs .ind-tab').forEach(b=>b.classList.toggle('active', b.dataset.fase===fase));
+}
+function openIndicador(tipo){
+  const tabs = document.querySelector('#ind-modal-tabs');
+  if(tipo==='projecao'){
+    if(tabs) tabs.innerHTML = `<button class="ind-tab" data-fase="ETA" onclick="openProjecaoFase('ETA')">ETA · origem</button><button class="ind-tab" data-fase="ETD" onclick="openProjecaoFase('ETD')">ETD · destino</button>`;
+    const t=document.querySelector('#ind-modal-title'); if(t) t.textContent='Projeção do SLA do mês — escolha a fase';
+    const tb=document.querySelector('#ind-modal-table'); if(tb) tb.innerHTML=`<tbody><tr><td><div class="empty-state" style="padding:28px">Escolha a fase acima — ETA (chegada na origem) ou ETD (chegada no destino) — pra ver as viagens.</div></td></tr></tbody>`;
+    const ov=document.querySelector('#ind-modal'); if(ov){ ov.style.display='flex'; document.body.style.overflow='hidden'; requestAnimationFrame(()=>ov.classList.add('open')); }
+    return;
+  }
+  if(tabs) tabs.innerHTML='';
+  const cfg = IND_CFG[tipo]; if(!cfg) return;
+  const rows = cfg.rows();
+  const head = '<tr>' + cfg.cols.map(c=>`<th>${c}</th>`).join('') + '</tr>';
+  const body = rows.length ? rows.map(r=>`<tr>${cfg.cell(r)}</tr>`).join('') : `<tr><td colspan="${cfg.cols.length}"><div class="empty-state" style="padding:24px">Sem registros no período.</div></td></tr>`;
+  const t = document.querySelector('#ind-modal-title'); if(t) t.textContent = `${cfg.titulo} · ${rows.length.toLocaleString('pt-BR')} linha${rows.length!==1?'s':''}`;
+  const tb = document.querySelector('#ind-modal-table'); if(tb) tb.innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;
+  const ov = document.querySelector('#ind-modal'); if(ov){ ov.style.display='flex'; document.body.style.overflow='hidden'; requestAnimationFrame(()=>ov.classList.add('open')); }
+}
+function closeIndicador(){ const ov=document.querySelector('#ind-modal'); if(ov){ ov.classList.remove('open'); document.body.style.overflow=''; setTimeout(()=>{ if(!ov.classList.contains('open')) ov.style.display='none'; },200); } }
 function renderRelResumo(){
   const fin = _relData.fin, canc = _relData.canc;
   const total   = fin.length;
@@ -1585,6 +1713,7 @@ function renderRelResumo(){
   const mediaPac = total ? Math.round(pacotes/total) : 0;
   const st = $('#rel-status'); if(st) st.textContent = `${total.toLocaleString('pt-BR')} finalizadas · ${canc.length.toLocaleString('pt-BR')} canceladas`;
   const P = _relPrev;
+  const _pacAtr = fin.filter(r=>/atrasad/i.test(r.resultado||'')).reduce((sm,r)=>sm+(parseInt(r.pacotes,10)||0),0);
   const k = $('#rel-kpis');
   if(k) k.innerHTML = [
     ['k-total','Finalizadas', total.toLocaleString('pt-BR'), '', 'pont', (P&&P.total>0)?relDelta(total, P.total, {neutral:true}):''],
@@ -1593,6 +1722,7 @@ function renderRelResumo(){
     ['k-blue','Pacotes', pacotes.toLocaleString('pt-BR'), `${mediaPac.toLocaleString('pt-BR')}/viagem`, '', (P&&P.total>0)?relDelta(pacotes, P.pacotes, {neutral:true}):''],
     ['k-grey','Canceladas', canc.length.toLocaleString('pt-BR'), taxaCanc+'% do programado', 'canc', (P&&P.total>0)?relDelta(canc.length, P.canc, {goodUp:false}):''],
     ['k-red','Infrutíferas', infrut.toLocaleString('pt-BR'), canc.length?Math.round(infrut/canc.length*100)+'% dos cancelamentos':'', 'infrut', (P&&P.total>0)?relDelta(infrut, P.infrut, {goodUp:false}):''],
+    ['k-amber','Pacotes em atraso', _pacAtr.toLocaleString('pt-BR'), pacotes?Math.round(_pacAtr/pacotes*100)+'% do volume':'', 'atraso', (P&&P.pacAtraso!=null)?relDelta(_pacAtr, P.pacAtraso, {goodUp:false}):''],
   ].map(([c,l,v,s,act,d]) => `<div class="kpi-card ${c} ${act?'clickable':''}"${act?` data-relkpi="${act}"`:''}><div class="kpi-label">${l}</div><div class="kpi-value tabular">${v}</div><div class="kpi-sub">${s}${s&&d?' · ':''}${d||''}</div>${act?'<span class="rel-kpi-go">ver ›</span>':''}</div>`).join('');
   const porHora = new Array(24).fill(0);
   fin.forEach(r => { const h = _horaDe(r.chegada); if(h!=null && h>=0 && h<24) porHora[h]++; });
@@ -1866,6 +1996,81 @@ function openDayDetail(iso){
   requestAnimationFrame(() => ov.classList.add('open'));
 }
 // Ofensores recorrentes: destinos com maior TAXA de atraso (mín. de volume), não só volume
+let _relMes = null;
+// Pontualidade de SAÍDA (origem): % que saiu no prazo. Indicador antecedente do atraso.
+function renderRelSaidaPontualidade(){
+  const fin = _relData.fin;
+  const com = fin.map(r=>saidaNoPrazo(r)).filter(v=>v!==null);
+  const total = com.length, noPrazo = com.filter(Boolean).length;
+  const pct = total ? Math.round(noPrazo/total*100) : 0;
+  const el = document.querySelector('#rel-saida-kpi');
+  if(el){
+    if(total){
+      const cls = pct>=90?'good':(pct>=70?'warn':'bad');
+      const P=_relPrev, delta=(P&&P.saidaPct!=null)?relDelta(pct,P.saidaPct,{pp:true,goodUp:true}):'';
+      el.innerHTML = `<div class="comp-big ${cls}">${pct}% ${delta}</div>`
+        + `<div class="comp-sub">${noPrazo.toLocaleString('pt-BR')} de ${total.toLocaleString('pt-BR')} saíram no prazo (saída real × programada)</div>`
+        + `<div class="comp-gap">indicador antecedente — o atraso costuma nascer no pátio</div>`;
+    } else el.innerHTML = `<div class="comp-sub" style="padding:22px 0">Sem dado de saída real no período.</div>`;
+  }
+  const porDia = {};
+  fin.forEach(r=>{ const v=saidaNoPrazo(r); if(v===null)return; const d=r.data; if(!d)return; if(!porDia[d])porDia[d]={n:0,ok:0}; porDia[d].n++; if(v)porDia[d].ok++; });
+  const dds=Object.keys(porDia).sort();
+  const trend=dds.map(d=>Math.round(porDia[d].ok/porDia[d].n*100));
+  const labels=dds.map(d=>d.slice(8,10)+'/'+d.slice(5,7));
+  const cv=document.querySelector('#chart-rel-saida');
+  if(cv && typeof Chart!=='undefined'){ destroyChart('relSaida'); charts.relSaida=new Chart(cv,{type:'line',
+    data:{labels,datasets:[{label:'% saiu no prazo',data:trend,borderColor:PALETTE.amber,backgroundColor:'rgba(234,154,0,.08)',borderWidth:2,tension:.3,fill:true,spanGaps:true,pointRadius:2}]},
+    options:{responsive:true,maintainAspectRatio:false,scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'}}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.parsed.y}% saiu no prazo`}}}}});}
+}
+// Projeção do SLA do mês corrente — acumulado do mês (melhor estimativa se o ritmo se mantém).
+function renderRelProjecao(){
+  const mes = (_relMes||[]).filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r));   // ignora o toggle de fase — cruza ETA e ETD
+  const np = r => /no prazo/i.test(r.resultado||'');
+  const eta = mes.filter(r => (r.fase||'ETD')==='ETA');
+  const etd = mes.filter(r => (r.fase||'ETD')!=='ETA');
+  const slaEta = eta.length ? Math.round(eta.filter(np).length/eta.length*100) : null;
+  const slaEtd = etd.length ? Math.round(etd.filter(np).length/etd.length*100) : null;
+  // Cruzado: por protocolo|trecho, precisa ter as duas fases e estar no prazo nas duas
+  const byKey = {}; mes.forEach(r=>{ const k=(r.rostering_id||r.route_id||'')+'|'+(r.trecho||''); if(!byKey[k])byKey[k]={}; if((r.fase||'ETD')==='ETA') byKey[k].eta=np(r); else byKey[k].etd=np(r); });
+  const ambos = Object.values(byKey).filter(o=>o.eta!==undefined && o.etd!==undefined);
+  const slaCruz = ambos.length ? Math.round(ambos.filter(o=>o.eta&&o.etd).length/ambos.length*100) : null;
+  const now = new Date();
+  const diasMes = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+  const atr = etd.filter(r=>/atrasad/i.test(r.resultado||''));
+  const byDest = {}; atr.forEach(r=>{ const k=r.destino||'—'; byDest[k]=(byDest[k]||0)+1; });
+  const topDest = Object.entries(byDest).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const impacto = topDest.length
+    ? `<div class="proj-impacto"><span class="proj-imp-lbl">Puxando o mês (ETD)</span>${topDest.map(([d,n])=>`<span class="proj-imp-item">${escapeHtml(d)} <b>${n}</b></span>`).join('')}</div>`
+    : '';
+  const clsFor = pp => pp==null?'':(pp>=90?'good':(pp>=80?'warn':'bad'));
+  const stat = (lbl,pp,extra) => `<div class="proj-stat ${extra||''}"><span class="proj-stat-val ${clsFor(pp)}">${pp==null?'—':pp+'%'}</span><span class="proj-stat-lbl">${lbl}</span></div>`;
+  const el = document.querySelector('#rel-proj');
+  if(el){
+    el.innerHTML = (slaEta!=null || slaEtd!=null)
+      ? `<div class="proj-tri">${stat('ETA · origem',slaEta)}${stat('ETD · destino',slaEtd)}${stat('Cruzado',slaCruz,'proj-stat-cruz')}</div>`
+        + `<div class="comp-gap">SLA acumulado do mês · projeção mantendo o ritmo · dia ${now.getDate()} de ${diasMes}</div>`
+        + impacto
+      : `<div class="comp-sub" style="padding:22px 0">Sem viagens finalizadas neste mês ainda.</div>`;
+  }
+}
+// Reincidência por ROTA (nomenclatura): rotas que mais atrasam. Complementa ofensores por destino.
+function renderRelReincidencia(){
+  const host = document.querySelector('#rel-reinc'); if(!host) return;
+  const by = {};
+  _relData.fin.forEach(r => { const k=(r.servico||'—'); if(!by[k]) by[k]={n:0,at:0}; by[k].n++; if(/atrasad/i.test(r.resultado||'')) by[k].at++; });
+  const MIN = 3;
+  const rows = Object.entries(by).filter(([k,o])=>o.n>=MIN && o.at>0)
+    .map(([k,o])=>({rota:k,n:o.n,at:o.at,taxa:Math.round(o.at/o.n*100)}))
+    .sort((a,b)=>b.taxa-a.taxa||b.at-a.at).slice(0,8);
+  if(!rows.length){ host.innerHTML = `<div class="empty-state" style="padding:20px">Nenhuma rota com reincidência de atraso (mín. ${MIN} viagens) no período.</div>`; return; }
+  host.innerHTML = rows.map(r=>{
+    const cls = r.taxa>=50?'b-vermelho':(r.taxa>=25?'b-amarelo':'b-verde');
+    return `<div class="rec-row" style="cursor:default"><div class="rec-dest mono" style="font-size:11px">${escapeHtml(r.rota)}</div>
+      <div class="rec-bar"><div class="rec-fill" style="width:${Math.max(4,r.taxa)}%"></div></div>
+      <div class="rec-meta"><span class="badge ${cls}"><span class="badge-dot"></span>${r.taxa}%</span> <span class="rec-vol">${r.at}/${r.n}</span></div></div>`;
+  }).join('');
+}
 function renderRelRecorrentes(){
   const host = $('#rel-recorrentes'); if(!host) return;
   const by = {};
@@ -2804,7 +3009,7 @@ function renderFleetMap(){
     }
     const pct = Math.round(frac * 100);
     L.circleMarker(pos, { radius: mapFocus===d.protocolo?9:7, color:'#fff', weight:1.5, fillColor:color, fillOpacity:.95 })
-      .bindPopup(`<b>${escapeHtml(d.protocolo)}</b> <span style="font-size:9px;font-weight:700;color:#6c707a;text-transform:uppercase">Protocolo</span><br>${escapeHtml(d.origemDisplay||d.origemGeo||'?')} → ${escapeHtml(d.destinoDisplay||d.destinoGeo||'?')}<br>${pct}% concluído${d.kmFaltante!=null?' · '+d.kmFaltante+' km restantes':''}<br>${escapeHtml(d.riscoTexto||'')}${d.ocorrencia?'<br>⚠ '+escapeHtml(d.ocorrencia):''}${d.causaRaiz?'<br>Causa: '+escapeHtml(d.causaRaiz):''}<br><a href="#" onclick="mapIsolate('${escapeHtml(d.protocolo)}');return false;" style="color:#b8860b;font-weight:600">🔍 isolar no mapa</a>`)
+      .bindPopup(`<b>${escapeHtml(d.protocolo)}</b> <span style="font-size:9px;font-weight:700;color:#6c707a;text-transform:uppercase">Protocolo</span><br>${escapeHtml(d.origemDisplay||d.origemGeo||'?')} → ${escapeHtml(d.destinoDisplay||d.destinoGeo||'?')}<br><div class="bar-mini bm-pop"><div class="bm-track"><div class="bm-fill ${FILL[d.risco]||'f-cinza'}" style="width:${pct}%"></div></div><span class="bm-pct">${pct}%</span></div>${d.kmFaltante!=null?d.kmFaltante+' km restantes':''}<br>${escapeHtml(d.riscoTexto||'')}${d.ocorrencia?'<br>⚠ '+escapeHtml(d.ocorrencia):''}${d.causaRaiz?'<br>Causa: '+escapeHtml(d.causaRaiz):''}<br><a href="#" onclick="mapIsolate('${escapeHtml(d.protocolo)}');return false;" style="color:#b8860b;font-weight:600">🔍 isolar no mapa</a>`)
       .addTo(_fleetLayer);
     plotted++;
     if(d.risco==='verde') np++; else if(d.risco==='amarelo') ri++; else if(d.risco==='vermelho') at++;
