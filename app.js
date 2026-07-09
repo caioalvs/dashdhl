@@ -1584,6 +1584,8 @@ function relDelta(cur, prev, opts){
   return `<span class="rel-delta ${cls}" title="vs período anterior">${up?'▲':'▼'} ${txt}</span>`;
 }
 
+let _relCache = { key:'', rows:null, prev:null };   // rows brutos do período (troca de operação re-filtra sem re-buscar)
+let _relMesCache = null;                            // mês corrente (projeção) — busca uma vez
 async function renderRelatorios(){
   const st = $('#rel-status');
   const { start, end } = relRangeEfetivo();
@@ -1591,8 +1593,15 @@ async function renderRelatorios(){
   const _jn = relJanela();
   const _fdt = v => { const d=new Date(v); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
   if(hint) hint.textContent = _jn ? `${_fdt(_jn.ini)} — ${_fdt(_jn.fim)} · por chegada` : `${start.split('-').reverse().join('/')} — ${end.split('-').reverse().join('/')}`;
-  if(st) st.textContent = 'Carregando…';
-  const res = await fetchHistorico(start, end);
+  const _key = start + '|' + end;
+  let res;
+  if(_relCache.key === _key && _relCache.rows){
+    res = { ok:true, rows:_relCache.rows };   // mesmo período → reusa (troca de operação é instantânea)
+  } else {
+    if(st) st.textContent = 'Carregando…';
+    res = await fetchHistorico(start, end);
+    if(res.ok || res.rows.length){ _relCache = { key:_key, rows:res.rows, prev:null }; }
+  }
   if(!res.ok && !res.rows.length){
     if(st) st.textContent = '';
     const k = $('#rel-kpis'); if(k) k.innerHTML = `<div class="empty-state" style="padding:36px;grid-column:1/-1">Não consegui ler o histórico agora${res.err?` (erro ${res.err})`:''}. Recarregue em instantes.</div>`;
@@ -1613,15 +1622,21 @@ async function renderRelatorios(){
   _relRowSeq = 0; for(const kk in _relRowMap) delete _relRowMap[kk];
   // período anterior (comparativo ▲▼) — não se aplica quando há janela de horário
   _relPrev = null;
-  if(!_jan){ try { const pr = relPrevRange(start, end); const rp = await fetchHistorico(pr.start, pr.end); if(rp.ok) _relPrev = computeRelKpis(rp.rows); } catch(e){} }
+  if(!_jan){ try {
+    if(!_relCache.prev){ const pr = relPrevRange(start, end); const rp = await fetchHistorico(pr.start, pr.end); if(rp.ok) _relCache.prev = rp.rows; }
+    if(_relCache.prev) _relPrev = computeRelKpis(_relCache.prev);
+  } catch(e){} }
   // mês corrente (projeção) — fetch independente do período selecionado
   _relMes = null;
   try {
-    const now = new Date();
-    const mStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-    const fmtD = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const rm = await fetchHistorico(mStart, fmtD(now));
-    if(rm.ok) _relMes = rm.rows;
+    if(!_relMesCache){
+      const now = new Date();
+      const mStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+      const fmtD = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const rm = await fetchHistorico(mStart, fmtD(now));
+      if(rm.ok) _relMesCache = rm.rows;
+    }
+    _relMes = _relMesCache;
   } catch(e){}
   renderRelResumo();
   renderRelCompliance();
