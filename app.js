@@ -1434,10 +1434,14 @@ function renderGestaoTrend(){
 /* ---- Aba Relatórios (histórico de viagens via Supabase) ---------------- */
 let _relPeriodo = '7d';
 let _relTipoOp = 'linehaul';    // Line Haul (padrão) × XPT — separa as duas operações
-function relTipoMatch(r){
-  const isXpt = /xpt/i.test(r.servico||'');
-  return _relTipoOp === 'xpt' ? isXpt : !isXpt;
+function opDe(r){
+  const sv = r.servico || '';
+  if(/xpt/i.test(sv)) return 'xpt';
+  if(/rev|revers|\.rv|rv\./i.test(sv)) return 'reversa';   // REV / REV.DEV / RV.MP ...
+  return 'linehaul';
 }
+function relTipoMatch(r){ return opDe(r) === _relTipoOp; }
+function opLabel(){ return _relTipoOp==='xpt' ? 'XPT' : (_relTipoOp==='reversa' ? 'Reversa' : 'Line Haul'); }
 let _relFase = 'etd';           // ETD/viagem (padrão) × ETA/chegada — dentro de LH/XPT
 function relFaseMatch(r){
   const f = String(r.fase || 'ETD').toUpperCase();   // registros antigos (sem fase) = ETD
@@ -1446,7 +1450,7 @@ function relFaseMatch(r){
 let _relStart = '', _relEnd = '';
 let _relCancMotivo = null;      // filtro do painel de cancelamentos
 let _relAtrasoTipo = null;      // filtro de tipo no painel de atrasos
-const _relData = { fin: [], canc: [] };  // cache do período (filtros sem refetch)
+const _relData = { fin: [], canc: [], eta: [] };  // cache do período (filtros sem refetch)
 let _relRowSeq = 0; const _relRowMap = {};   // clique numa linha -> detalhe da viagem
 function relRowRef(r){ const id = _relRowSeq++; _relRowMap[id] = r; return id; }
 function relRangeEfetivo(){
@@ -1537,10 +1541,13 @@ function computeRelKpis(rows){
   const _atrNeed = fin.filter(r => /atrasad/i.test(r.resultado||'') && !preCheckinNoPrazo(r));
   const _just = _atrNeed.filter(r => relJustificativa(r)).length;
   const comp = _atrNeed.length ? Math.round(_just/_atrNeed.length*100) : 100;
+  const _eta = rows.filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r) && (r.fase||'ETD')==='ETA');
+  const etaTotal = _eta.length;
+  const etaPct = etaTotal ? Math.round(_eta.filter(r=>/no prazo/i.test(r.resultado||'')).length/etaTotal*100) : 0;
   const _sc = fin.map(r=>saidaNoPrazo(r)).filter(v=>v!==null);
   const saidaPct = _sc.length ? Math.round(_sc.filter(Boolean).length/_sc.length*100) : null;
   const pacAtraso = fin.filter(r=>/atrasad/i.test(r.resultado||'')).reduce((s,r)=>s+(parseInt(r.pacotes,10)||0),0);
-  return { total, noPrazo, pct: total?Math.round(noPrazo/total*100):0, atraso, pacotes, canc: canc.length, infrut, comp, saidaPct, pacAtraso };
+  return { total, noPrazo, pct: total?Math.round(noPrazo/total*100):0, atraso, pacotes, canc: canc.length, infrut, comp, saidaPct, pacAtraso, etaTotal, etaPct };
 }
 // Tolerância aplicada às 3 fases (CPT/saída, ETA e ETD chegada): até X min depois do horário
 // oficial ainda conta como no prazo. Ex.: oficial 03:00 → 03:19 no prazo, 03:20 atraso.
@@ -1592,13 +1599,15 @@ async function renderRelatorios(){
     return;
   }
   _relData.fin  = res.rows.filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r) && relFaseMatch(r));
-  _relData.canc = res.rows.filter(r => /cancel/i.test(r.estado||'') && relTipoMatch(r) && relFaseMatch(r));
+  _relData.canc = res.rows.filter(r => /cancel/i.test(r.estado||'') && relTipoMatch(r));   // cancelados (todos ETD no dado) — mostrados no bloco ETA
+  _relData.eta  = res.rows.filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r) && (r.fase||'ETD')==='ETA');   // chegada na origem (pontualidade ETA)
   // Janela de HORAS: corte fino pelo timestamp de chegada (o campo data é só data).
   const _jan = relJanela();
   if(_jan){
     const inWin = r => { const t = parseDateBR(r.chegada); if(!t) return false; const dt = new Date(t); return dt >= _jan.ini && dt <= _jan.fim; };
     _relData.fin  = _relData.fin.filter(inWin);
     _relData.canc = _relData.canc.filter(inWin);
+    _relData.eta  = _relData.eta.filter(inWin);
   }
   _relCancMotivo = null; _relAtrasoTipo = null;
   _relRowSeq = 0; for(const kk in _relRowMap) delete _relRowMap[kk];
@@ -1707,6 +1716,10 @@ function renderRelResumo(){
   const atraso  = fin.filter(r => /atrasad/i.test(r.resultado||'')).length;
   const pacotes = fin.reduce((s,r) => s + (parseInt(r.pacotes,10)||0), 0);
   const pct = total ? Math.round(noPrazo/total*100) : 0;
+  const eta = _relData.eta || [];
+  const etaTotal = eta.length;
+  const etaNoPrazo = eta.filter(r => /no prazo/i.test(r.resultado||'')).length;
+  const etaPct = etaTotal ? Math.round(etaNoPrazo/etaTotal*100) : 0;
   const infrut = canc.filter(r => /infrut/i.test(r.motivo_cancelamento||'')).length;
   const prog = total + canc.length;
   const taxaCanc = prog ? Math.round(canc.length/prog*100) : 0;
@@ -1716,13 +1729,14 @@ function renderRelResumo(){
   const _pacAtr = fin.filter(r=>/atrasad/i.test(r.resultado||'')).reduce((sm,r)=>sm+(parseInt(r.pacotes,10)||0),0);
   const k = $('#rel-kpis');
   if(k) k.innerHTML = [
-    ['k-total','Finalizadas', total.toLocaleString('pt-BR'), '', 'pont', (P&&P.total>0)?relDelta(total, P.total, {neutral:true}):''],
-    ['k-green','Pontualidade', pct+'%', `${noPrazo.toLocaleString('pt-BR')} no prazo`, 'pont', (P&&P.total>0)?relDelta(pct, P.pct, {pp:true, goodUp:true}):''],
-    ['k-red','Atrasadas', atraso.toLocaleString('pt-BR'), total?Math.round(atraso/total*100)+'% das finalizadas':'', 'atraso', (P&&P.total>0)?relDelta(atraso, P.atraso, {goodUp:false}):''],
-    ['k-blue','Pacotes', pacotes.toLocaleString('pt-BR'), `${mediaPac.toLocaleString('pt-BR')}/viagem`, '', (P&&P.total>0)?relDelta(pacotes, P.pacotes, {neutral:true}):''],
-    ['k-grey','Canceladas', canc.length.toLocaleString('pt-BR'), taxaCanc+'% do programado', 'canc', (P&&P.total>0)?relDelta(canc.length, P.canc, {goodUp:false}):''],
-    ['k-red','Infrutíferas', infrut.toLocaleString('pt-BR'), canc.length?Math.round(infrut/canc.length*100)+'% dos cancelamentos':'', 'infrut', (P&&P.total>0)?relDelta(infrut, P.infrut, {goodUp:false}):''],
-    ['k-amber','Pacotes em atraso', _pacAtr.toLocaleString('pt-BR'), pacotes?Math.round(_pacAtr/pacotes*100)+'% do volume':'', 'atraso', (P&&P.pacAtraso!=null)?relDelta(_pacAtr, P.pacAtraso, {goodUp:false}):''],
+    ['k-total','Finalizadas', total.toLocaleString('pt-BR'), 'viagens concluídas (ETD)', 'pont', (P&&P.total>0)?relDelta(total, P.total, {neutral:true}):''],
+    ['k-green','Pontualidade ETA', etaPct+'%', `${etaNoPrazo.toLocaleString('pt-BR')} chegaram na origem no prazo`, '', (P&&P.etaTotal>0)?relDelta(etaPct, P.etaPct, {pp:true, goodUp:true}):''],
+    ['k-green','Pontualidade ETD', pct+'%', `${noPrazo.toLocaleString('pt-BR')} chegaram no destino no prazo`, 'pont', (P&&P.total>0)?relDelta(pct, P.pct, {pp:true, goodUp:true}):''],
+    ['k-red','Atrasadas', atraso.toLocaleString('pt-BR'), total?Math.round(atraso/total*100)+'% das finalizadas (ETD)':'', 'atraso', (P&&P.total>0)?relDelta(atraso, P.atraso, {goodUp:false}):''],
+    ['k-blue','Pacotes', pacotes.toLocaleString('pt-BR'), `${mediaPac.toLocaleString('pt-BR')}/viagem (ETD)`, '', (P&&P.total>0)?relDelta(pacotes, P.pacotes, {neutral:true}):''],
+    ['k-amber','Pacotes em atraso', _pacAtr.toLocaleString('pt-BR'), pacotes?Math.round(_pacAtr/pacotes*100)+'% do volume (ETD)':'', 'atraso', (P&&P.pacAtraso!=null)?relDelta(_pacAtr, P.pacAtraso, {goodUp:false}):''],
+    ['k-grey','Canceladas', canc.length.toLocaleString('pt-BR'), taxaCanc+'% do programado · fase ETA', 'canc', (P&&P.total>0)?relDelta(canc.length, P.canc, {goodUp:false}):''],
+    ['k-red','Infrutíferas', infrut.toLocaleString('pt-BR'), (canc.length?Math.round(infrut/canc.length*100)+'% dos cancelamentos':'sem cancelamento')+' · fase ETA', 'infrut', (P&&P.total>0)?relDelta(infrut, P.infrut, {goodUp:false}):''],
   ].map(([c,l,v,s,act,d]) => `<div class="kpi-card ${c} ${act?'clickable':''}"${act?` data-relkpi="${act}"`:''}><div class="kpi-label">${l}</div><div class="kpi-value tabular">${v}</div><div class="kpi-sub">${s}${s&&d?' · ':''}${d||''}</div>${act?'<span class="rel-kpi-go">ver ›</span>':''}</div>`).join('');
   const porHora = new Array(24).fill(0);
   fin.forEach(r => { const h = _horaDe(r.chegada); if(h!=null && h>=0 && h<24) porHora[h]++; });
@@ -2110,7 +2124,7 @@ function openDestDetail(dest){
   fin.forEach(r => { const t = tipoRota(r.servico) || '—'; tipoMap[t] = (tipoMap[t]||0)+1; });
   const tipoTop = Object.entries(tipoMap).sort((a,b)=>b[1]-a[1]);
   const acls = pct>=90 ? 'dt-ok' : (pct>=80 ? 'dt-warn' : 'dt-crit');
-  const op = _relTipoOp === 'xpt' ? 'XPT' : 'Line Haul';
+  const op = opLabel();
   let html = `<div class="dt-action ${acls}"><span class="dt-action-ttl">Pontualidade no destino (${op})</span>${pct}% no prazo · ${n} viage${n!==1?'ns':'m'} no período</div>`;
   html += `<div class="dt-sec">Volume e prazo</div>`
     + dtField('Viagens finalizadas', n)

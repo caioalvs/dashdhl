@@ -1113,13 +1113,7 @@
             <div class="rel-op-switch" id="rel-op-switch">
               <button class="rel-op-btn active" data-op="linehaul">Line Haul</button>
               <button class="rel-op-btn" data-op="xpt">XPT</button>
-            </div>
-          </div>
-          <div class="rel-sw-group">
-            <span class="rel-sw-lbl">Fase</span>
-            <div class="rel-op-switch" id="rel-fase-switch">
-              <button class="rel-fase-btn active" data-fase="etd">ETD · Viagem</button>
-              <button class="rel-fase-btn" data-fase="eta">ETA · Chegada</button>
+              <button class="rel-op-btn" data-op="reversa">Reversa</button>
             </div>
           </div>
         </div>
@@ -1250,7 +1244,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=29"></script>
+<script src="app.js?v=30"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">
