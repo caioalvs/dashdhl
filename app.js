@@ -1564,6 +1564,7 @@ function saidaNoPrazo(r){
 // ETD: destino_eta), resgata pra "No prazo".
 function resultadoTol(r){
   if(/no prazo/i.test(r.resultado||'')) return r.resultado;
+  if(preCheckinNoPrazo(r)) return 'No prazo';   // pré check-in no destino dentro do prazo → vale ETA e ETD (GPS prova a chegada)
   const isEta = (r.fase||'ETD')==='ETA';
   const oficial = parseDateBR(isEta ? r.saida_programada : r.destino_eta);
   const real = parseDateBR(r.chegada);
@@ -1662,6 +1663,21 @@ function relJustificativa(r){
 function _indBadge(cls,txt){ return `<span class="badge ${cls}"><span class="badge-dot"></span>${txt}</span>`; }
 function _indOcor(r){ const j=relJustificativa(r); return j?`<span class="ocor-info">${escapeHtml(j)}</span>`:'<span class="ocor-empty">sem ocorrência</span>'; }
 function _indResult(r){ return /atrasad/i.test(r.resultado||'') ? _indBadge('b-vermelho','Atrasado') : _indBadge('b-verde', r.resultado||'No prazo'); }
+let _indBack = null;   // função pra voltar do detalhe da rota pro modal anterior
+function _indProto(r){ return String(r.rostering_id && r.rostering_id!=='0' ? r.rostering_id : (r.route_id||'')); }
+// Clique numa linha do modal → detalhe COMPLETO da rota: todos os trechos e fases, com todos os horários.
+function openRotaHist(proto){
+  const recs = (_relMes||[]).filter(r => _indProto(r)===String(proto) || String(r.rostering_id)===String(proto) || String(r.route_id)===String(proto));
+  recs.sort((a,b)=> String(a.fase||'ETD').localeCompare(String(b.fase||'ETD')) || String(a.trecho||'').localeCompare(String(b.trecho||'')));
+  const nome = (recs[0] && recs[0].servico) || '';
+  const t=document.querySelector('#ind-modal-title'); if(t) t.textContent=`Rota ${proto}${nome?' · '+nome:''} · ${recs.length} registro(s)`;
+  const tabs=document.querySelector('#ind-modal-tabs'); if(tabs) tabs.innerHTML = `<button class="ind-tab" onclick="if(typeof _indBack==='function')_indBack()">‹ voltar</button>`;
+  const cols=['Fase','Trecho','Origem → Destino','Saída prog.','Saída real','Chegada real','ETA destino','Pré check-in','Pacotes','Resultado','Ocorrência'];
+  const cell=r=>`<td><b>${r.fase||'ETD'}</b></td><td>${escapeHtml(r.trecho||'—')}</td><td class="mono">${escapeHtml(r.origem||'?')} → ${escapeHtml(r.destino||'?')}</td><td>${fmtHora(r.saida_programada)}</td><td>${fmtHora(r.saida_real)}</td><td>${fmtHora(r.chegada)}</td><td>${fmtHora(r.destino_eta)}</td><td>${fmtHora(r.pre_check_destino)}</td><td class="num">${r.pacotes!=null?Number(r.pacotes).toLocaleString('pt-BR'):'—'}</td><td>${_indResult(r)}</td><td>${_indOcor(r)}</td>`;
+  const tb=document.querySelector('#ind-modal-table');
+  if(tb) tb.innerHTML = recs.length ? `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${recs.map(r=>`<tr>${cell(r)}</tr>`).join('')}</tbody>` : `<tbody><tr><td><div class="empty-state" style="padding:24px">Sem registros no mês pra ${escapeHtml(String(proto))}.</div></td></tr></tbody>`;
+  const ov=document.querySelector('#ind-modal'); if(ov && ov.style.display!=='flex'){ ov.style.display='flex'; document.body.style.overflow='hidden'; requestAnimationFrame(()=>ov.classList.add('open')); }
+}
 const IND_CFG = {
   saida: {
     titulo: 'Pontualidade de saída',
@@ -1700,7 +1716,8 @@ function openProjecaoFase(fase){
     return `<td>${relIdCell(r)}</td><td class="mono">${escapeHtml(r.servico||'—')}</td><td>${escapeHtml(tipoRota(r.servico))}</td><td>${escapeHtml(local||'—')}</td><td>${fmtHora(oficial)}</td><td>${fmtHora(r.chegada)}</td><td>${_indResult(r)}</td><td>${_indOcor(r)}</td>`;
   };
   const head = '<tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr>';
-  const body = rows.length ? rows.map(r=>`<tr>${cell(r)}</tr>`).join('') : `<tr><td colspan="${cols.length}"><div class="empty-state" style="padding:24px">Sem registros nesta fase.</div></td></tr>`;
+  const body = rows.length ? rows.map(r=>`<tr class="rel-click" style="cursor:pointer" onclick="openRotaHist('${_indProto(r)}')">${cell(r)}</tr>`).join('') : `<tr><td colspan="${cols.length}"><div class="empty-state" style="padding:24px">Sem registros nesta fase.</div></td></tr>`;
+  _indBack = () => openProjecaoFase(fase);
   const t=document.querySelector('#ind-modal-title'); if(t) t.textContent=`Projeção do SLA do mês · ${fase} · ${rows.length.toLocaleString('pt-BR')} viagens`;
   const tb=document.querySelector('#ind-modal-table'); if(tb) tb.innerHTML=`<thead>${head}</thead><tbody>${body}</tbody>`;
   document.querySelectorAll('#ind-modal-tabs .ind-tab').forEach(b=>b.classList.toggle('active', b.dataset.fase===fase));
@@ -1718,7 +1735,8 @@ function openIndicador(tipo){
   const cfg = IND_CFG[tipo]; if(!cfg) return;
   const rows = cfg.rows();
   const head = '<tr>' + cfg.cols.map(c=>`<th>${c}</th>`).join('') + '</tr>';
-  const body = rows.length ? rows.map(r=>`<tr>${cfg.cell(r)}</tr>`).join('') : `<tr><td colspan="${cfg.cols.length}"><div class="empty-state" style="padding:24px">Sem registros no período.</div></td></tr>`;
+  const body = rows.length ? rows.map(r=>`<tr class="rel-click" style="cursor:pointer" onclick="openRotaHist('${_indProto(r)}')">${cfg.cell(r)}</tr>`).join('') : `<tr><td colspan="${cfg.cols.length}"><div class="empty-state" style="padding:24px">Sem registros no período.</div></td></tr>`;
+  _indBack = () => openIndicador(tipo);
   const t = document.querySelector('#ind-modal-title'); if(t) t.textContent = `${cfg.titulo} · ${rows.length.toLocaleString('pt-BR')} linha${rows.length!==1?'s':''}`;
   const tb = document.querySelector('#ind-modal-table'); if(tb) tb.innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;
   const ov = document.querySelector('#ind-modal'); if(ov){ ov.style.display='flex'; document.body.style.overflow='hidden'; requestAnimationFrame(()=>ov.classList.add('open')); }
