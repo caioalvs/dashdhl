@@ -1333,20 +1333,34 @@ function gestaoJump(jump){
     activateTab('eta'); refreshEta(); syncFilterUI('eta');
   }
 }
+function _gxFill(key, rows, rowFn, colspan){
+  const cnt=$('#'+key+'-cnt'); if(cnt) cnt.textContent=rows.length;
+  const tb=$('#'+key+'-tbody'); if(!tb) return;
+  tb.innerHTML = rows.length ? rows.map(rowFn).join('') : `<tr><td colspan="${colspan}"><div class="empty-state">Nada por aqui. 👍</div></td></tr>`;
+}
+function _gxEtaRow(d){
+  return `<tr data-proto="${escapeHtml(d.protocolo)}" style="cursor:pointer">${protoTd(d.protocolo)}<td class="mono">${escapeHtml(d.rota||'—')}</td><td class="mono">${escapeHtml(d.placa||'—')}</td><td>${escapeHtml(d.origem||'—')}</td><td>${escapeHtml(d.destino||'—')}</td><td>${fmtDateTime(d.horarioMax)}</td><td>${classeBadge(d.classificacao,d.classificacaoTexto)}</td></tr>`;
+}
+function _gxFaixa(d){
+  const cls = d.risco==='vermelho'?'b-vermelho':(d.risco==='amarelo'?'b-amarelo':'b-verde');
+  const txt = d.parado ? 'Parado' : (d.riscoTexto||'—');
+  return `<span class="badge ${cls}"><span class="badge-dot"></span>${escapeHtml(txt)}</span>`;
+}
+function _gxEtdRowFaixa(d){
+  return `<tr class="${d.risco==='vermelho'?'crit':''}" data-proto="${escapeHtml(d.protocolo)}" style="cursor:pointer">${protoTd(d.protocolo)}<td class="mono">${escapeHtml(d.rota||'—')}</td><td class="mono">${escapeHtml(d.placa||'—')}</td><td>${escapeHtml(d.destino||'—')}</td><td>${fmtDateTime(d.etaDestino)}</td><td>${progressCell(d)}</td><td class="num">${d.kmFaltante!=null?d.kmFaltante+' km':'—'}</td><td class="num"><b>${d.kmMedio!=null?d.kmMedio+' km/h':'—'}</b></td><td>${escapeHtml(d.statusSM||'—')}</td><td>${_gxFaixa(d)}</td></tr>`;
+}
+function _gxEtdRow(d){
+  return `<tr data-proto="${escapeHtml(d.protocolo)}" style="cursor:pointer">${protoTd(d.protocolo)}<td class="mono">${escapeHtml(d.rota||'—')}</td><td class="mono">${escapeHtml(d.placa||'—')}</td><td>${escapeHtml(d.destino||'—')}</td><td>${fmtDateTime(d.etaDestino)}</td><td>${progressCell(d)}</td><td class="num">${d.kmFaltante!=null?d.kmFaltante+' km':'—'}</td><td class="num"><b>${d.kmMedio!=null?d.kmMedio+' km/h':'—'}</b></td><td>${escapeHtml(d.statusSM||'—')}</td></tr>`;
+}
+function _gxPostoRow(d){
+  return `<tr class="${d.risco==='vermelho'?'crit':''}" data-proto="${escapeHtml(d.protocolo)}" style="cursor:pointer">${protoTd(d.protocolo)}<td class="mono">${escapeHtml(d.rota||'—')}</td><td class="mono">${escapeHtml(d.placa||'—')}</td><td>${escapeHtml(d.destino||'—')}</td><td>${progressCell(d)}</td><td class="num">${d.kmFaltante!=null?d.kmFaltante+' km':'—'}</td><td class="num"><b>${d.kmMedio!=null?d.kmMedio+' km/h':'—'}</b></td><td><span class="ocor-info">${escapeHtml(d.postoSituacao||'—')}</span></td><td class="num"><b>${d.postoKm!=null?d.postoKm+' km':'—'}</b></td><td>${escapeHtml(d.statusSM||'—')}</td></tr>`;
+}
 function renderGestao(){
-  const etd = (DASHBOARD_DATA.etd || []).filter(d => !d.finalizada && !d.naoPrioritaria);
+  const etdAll = (DASHBOARD_DATA.etd || []);
+  const etd = etdAll.filter(d => !d.finalizada && !d.naoPrioritaria && !d.naoIniciada && !d.divergenciaSM);
   const eta = (DASHBOARD_DATA.eta || []).filter(d => !d.ehXpt);
-  const { etaPct, etdPct } = snapshotPcts();
-  const hl = $('#gestao-headline');
-  if(hl) hl.innerHTML = (etdPct != null)
-    ? `Pontualidade ETD <span class="hl-strong">${etdPct}%</span> · meta ${SLA_META}%`
-    : 'Coletando leituras para o placar…';
-  const rib = $('#ribbon-gestao');
-  if(rib){ rib.classList.remove('state-verde','state-amarelo','state-vermelho');
-    const s = etdPct==null ? 'verde' : (etdPct>=SLA_META?'verde':(etdPct>=SLA_META-10?'amarelo':'vermelho'));
-    rib.classList.add('state-'+s); }
-  const st = $('#gestao-sla');
-  if(st) st.innerHTML = slaStat('ETD no prazo', etdPct) + slaStat('ETA no prazo', etaPct);
+  const naoBipou = eta.filter(d => d.classificacao === 'cinza').sort((a,b)=> (a.horarioMax?+new Date(a.horarioMax):9e15) - (b.horarioMax?+new Date(b.horarioMax):9e15));
+  _gxFill('gx-eta', naoBipou, _gxEtaRow, 7);
   const parados = etd.filter(d=>d.parado).length;
   const risco   = etd.filter(d=>d.risco==='amarelo').length;
   const atraso  = etd.filter(d=>d.risco==='vermelho').length;
@@ -1357,11 +1371,15 @@ function renderGestao(){
     ['var(--amber)','Em risco · ETD', risco, 'etd-amarelo'],
     ['var(--amber)','Veículos parados', parados, 'etd-parados'],
     ['var(--red)','Chegada atrasada · ETA', etaAtr, 'eta-vermelho'],
+    ['var(--grey)','Aguardando bipagem · ETA', naoBipou.length, 'eta'],
     ['var(--green)','Em viagem (prioritárias)', etd.length, 'etd-todos'],
   ].map(([c,l,v,jump])=>`<div class="ca-row gx-jump" data-jump="${jump}"><span class="ca-dot" style="background:${c}"></span><div style="flex:1">${l}</div><b style="font-family:var(--font-num)">${v}</b><span class="gx-arrow">›</span></div>`).join('');
-  renderGestaoTrend();
-  renderGestaoDest();
-  renderOfensores();
+  const riscoAtencao = etd.filter(d => d.risco==='vermelho' || d.risco==='amarelo' || d.parado).sort((a,b)=> ((b.risco==='vermelho'?2:(b.parado?1:0)) - (a.risco==='vermelho'?2:(a.parado?1:0))) || ((b.kmMedio||0)-(a.kmMedio||0)));
+  _gxFill('gx-risco', riscoAtencao, _gxEtdRowFaixa, 10);
+  const noPrazo = etd.filter(d => d.risco==='verde' && !d.parado).sort((a,b)=>(a.kmMedio||0)-(b.kmMedio||0));
+  _gxFill('gx-ok', noPrazo, _gxEtdRow, 9);
+  const posto = etdAll.filter(d => d.postoFiscal && !d.naoIniciada).sort((a,b)=>(a.postoKm==null?1e9:a.postoKm)-(b.postoKm==null?1e9:b.postoKm));
+  _gxFill('gx-posto', posto, _gxPostoRow, 10);
 }
 function renderOfensores(){
   const all = buildOfensores();
@@ -2426,6 +2444,8 @@ function bindRowDetails(){
     if(ac){ openDetail(ac.dataset.proto); return; }
     const ocr = e.target.closest('#alertas-ocor-tbody tr[data-proto]');
     if(ocr){ openDetail(ocr.dataset.proto); return; }
+    const gxr = e.target.closest('#view-gestao tbody tr[data-proto]');
+    if(gxr){ openDetail(gxr.dataset.proto); return; }
     const oclr = e.target.closest('#ofen-clear');
     if(oclr){ gestaoDestSel = null; renderGestaoDest(); renderOfensores(); return; }
     const ofr = e.target.closest('.ofen-row');
@@ -2706,7 +2726,7 @@ function bindTabs(){
       // o mapa precisa recalcular tamanho quando a aba fica visível
       if(tab==='mapa') renderFleetMap();
       if(tab==='alertas'){ renderAlertas(); renderTrend(); fetchAtrasosSemOcorrencia(); }
-      if(tab==='gestao'){ fetchGestaoTrend(); renderGestao(); Object.values(charts).forEach(c=>c.resize()); }
+      if(tab==='gestao'){ renderGestao(); }
       if(tab==='relatorios'){ renderRelatorios(); }
       if(tab==='validacao') renderValTable();
       if(tab==='xpt') renderXptTable();
@@ -2974,7 +2994,6 @@ async function boot(){
   initEtaFilters();
   initEtdFilters();
   renderAll();
-  fetchGestaoTrend();            // tendência da GESTÃO vem do histórico real (Supabase)
   fetchAtrasosSemOcorrencia();   // risco: atrasos finalizados sem ocorrência (ALERTAS)
 
   // aplica a visão salva (valores de busca, contadores de filtro, aba ativa)

@@ -1063,39 +1063,37 @@
       </section>
 
       <section id="view-gestao" style="display:none;">
-        <div class="ops-ribbon" id="ribbon-gestao" style="grid-template-columns:1fr auto; grid-template-areas:'head stats';">
-          <div class="ops-left">
-            <div class="ops-eyebrow">Gestão · visão executiva da operação</div>
-            <div class="ops-headline" id="gestao-headline">—</div>
-          </div>
-          <div class="ops-stats" id="gestao-sla"></div>
+        <div class="panel" style="margin-bottom:18px">
+          <h3>🕓 Veículos que ainda não biparam no ETA <span class="hint"><b id="gx-eta-cnt">0</b> · aguardando chegada na origem · clique numa rota pro detalhe</span></h3>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Origem</th><th>Destino</th><th>Horário máximo</th><th>Status</th></tr></thead>
+            <tbody id="gx-eta-tbody"></tbody>
+          </table></div>
         </div>
         <div class="panel" style="margin-bottom:18px">
-          <h3>Tendência da pontualidade <span class="hint">% no prazo por dia · últimos 14 dias (histórico)</span></h3>
-          <div style="height:240px;position:relative"><canvas id="chart-gestao-trend"></canvas></div>
+          <h3>Resumo do plantão <span class="hint">clique para ir à aba filtrada</span></h3>
+          <div id="gestao-resumo" class="chart-aside"></div>
         </div>
-        <div class="chart-row-small">
-          <div class="panel">
-            <h3>Atrasos por destino <span class="hint">clique num destino para filtrar as rotas abaixo</span></h3>
-            <div class="gx-dest-split">
-              <div class="gx-dest-col">
-                <div class="gx-dest-cap"><span class="ca-dot" style="background:var(--red)"></span> Chegada · ETA</div>
-                <div class="gx-dest-scroll"><table class="gx-dest-tbl"><tbody id="gestao-dest-eta"></tbody></table></div>
-              </div>
-              <div class="gx-dest-col">
-                <div class="gx-dest-cap"><span class="ca-dot" style="background:var(--red)"></span> Viagem · ETD</div>
-                <div class="gx-dest-scroll"><table class="gx-dest-tbl"><tbody id="gestao-dest-etd"></tbody></table></div>
-              </div>
-            </div>
-          </div>
-          <div class="panel">
-            <h3>Resumo do plantão <span class="hint">clique para ir à aba filtrada</span></h3>
-            <div id="gestao-resumo" class="chart-aside"></div>
-          </div>
+        <div class="panel" style="margin-bottom:18px">
+          <h3>⚠ Risco de atraso e atenção <span class="hint"><b id="gx-risco-cnt">0</b> · possível atraso + em risco + parados (ETD) · clique numa rota</span></h3>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th class="num">Km faltante</th><th class="num">Km/h médio</th><th>Status SM</th><th>Faixa</th></tr></thead>
+            <tbody id="gx-risco-tbody"></tbody>
+          </table></div>
         </div>
-        <div class="panel" style="margin-top:18px">
-          <h3 id="gestao-ofen-head">Principais ofensores</h3>
-          <div id="gestao-ofen" class="ofen-wrap"></div>
+        <div class="panel" style="margin-bottom:18px">
+          <h3>✓ Rotas no prazo <span class="hint"><b id="gx-ok-cnt">0</b> · ETD dentro do previsto</span></h3>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th class="num">Km faltante</th><th class="num">Km/h médio</th><th>Status SM</th></tr></thead>
+            <tbody id="gx-ok-tbody"></tbody>
+          </table></div>
+        </div>
+        <div class="panel" style="margin-bottom:18px">
+          <h3>🛃 Posto fiscal <span class="hint"><b id="gx-posto-cnt">0</b> · veículos com excepcionalidade a acompanhar</span></h3>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Progresso</th><th class="num">Km faltante</th><th class="num">Km/h médio</th><th>Situação</th><th class="num">Km até o posto</th><th>Status SM</th></tr></thead>
+            <tbody id="gx-posto-tbody"></tbody>
+          </table></div>
         </div>
       </section>
 
@@ -1244,7 +1242,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=32"></script>
+<script src="app.js?v=33"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">
