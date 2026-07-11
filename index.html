@@ -297,6 +297,9 @@
   .ind-modal-close:hover { color:var(--text); border-color:var(--yellow-dim); }
   .ind-modal-scroll { overflow:auto; }
   .ind-modal-tbl { width:100%; }
+  .gx-search { display:block; width:100%; max-width:360px; margin:0 0 10px; border:1px solid var(--border); border-radius:8px; padding:8px 12px; font-family:var(--font-body); font-size:12.5px; background:var(--bg-panel-2); color:var(--text); }
+  .gx-search:focus { outline:none; border-color:var(--yellow-dim); background:var(--bg-panel); }
+  .gx-search::placeholder { color:var(--grey); }
   .ind-modal-tabs { display:flex; gap:6px; margin-left:auto; margin-right:10px; }
   .ind-tab { background:var(--bg-panel-2); border:1px solid var(--border); color:var(--text-dim); font-size:12px; font-weight:700; padding:6px 13px; border-radius:100px; cursor:pointer; transition:background .12s ease, border-color .12s ease, color .12s ease; }
   .ind-tab:hover { color:var(--text); border-color:var(--yellow-dim); }
@@ -1065,6 +1068,7 @@
       <section id="view-gestao" style="display:none;">
         <div class="panel" style="margin-bottom:18px">
           <h3>🕓 Veículos que ainda não biparam no ETA <span class="hint"><b id="gx-eta-cnt">0</b> · aguardando chegada na origem · clique numa rota pro detalhe</span></h3>
+          <input type="text" class="gx-search" data-gx="gx-eta" placeholder="Buscar protocolo, rota, placa, destino…">
           <div class="table-scroll short"><table>
             <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Origem</th><th>Destino</th><th>Horário máximo</th><th>Status</th></tr></thead>
             <tbody id="gx-eta-tbody"></tbody>
@@ -1075,7 +1079,8 @@
           <div id="gestao-resumo" class="chart-aside"></div>
         </div>
         <div class="panel" style="margin-bottom:18px">
-          <h3>⚠ Risco de atraso e atenção <span class="hint"><b id="gx-risco-cnt">0</b> · possível atraso + em risco + parados (ETD) · clique numa rota</span></h3>
+          <h3>⚠ Risco de atraso e atenção <span class="hint"><b id="gx-risco-cnt">0</b> · possível atraso + em risco (ETD) · clique numa rota</span></h3>
+          <input type="text" class="gx-search" data-gx="gx-risco" placeholder="Buscar protocolo, rota, placa, destino…">
           <div class="table-scroll short"><table>
             <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th class="num">Km faltante</th><th class="num">Km/h médio</th><th>Status SM</th><th>Faixa</th></tr></thead>
             <tbody id="gx-risco-tbody"></tbody>
@@ -1083,6 +1088,7 @@
         </div>
         <div class="panel" style="margin-bottom:18px">
           <h3>✓ Rotas no prazo <span class="hint"><b id="gx-ok-cnt">0</b> · ETD dentro do previsto</span></h3>
+          <input type="text" class="gx-search" data-gx="gx-ok" placeholder="Buscar protocolo, rota, placa, destino…">
           <div class="table-scroll short"><table>
             <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th class="num">Km faltante</th><th class="num">Km/h médio</th><th>Status SM</th></tr></thead>
             <tbody id="gx-ok-tbody"></tbody>
@@ -1090,6 +1096,7 @@
         </div>
         <div class="panel" style="margin-bottom:18px">
           <h3>🛃 Posto fiscal <span class="hint"><b id="gx-posto-cnt">0</b> · veículos com excepcionalidade a acompanhar</span></h3>
+          <input type="text" class="gx-search" data-gx="gx-posto" placeholder="Buscar protocolo, rota, placa, destino…">
           <div class="table-scroll short"><table>
             <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Progresso</th><th class="num">Km faltante</th><th class="num">Km/h médio</th><th>Situação</th><th class="num">Km até o posto</th><th>Status SM</th></tr></thead>
             <tbody id="gx-posto-tbody"></tbody>
@@ -1242,7 +1249,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=33"></script>
+<script src="app.js?v=34"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">

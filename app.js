@@ -1333,6 +1333,8 @@ function gestaoJump(jump){
     activateTab('eta'); refreshEta(); syncFilterUI('eta');
   }
 }
+const _gxSearch = { 'gx-eta':'', 'gx-risco':'', 'gx-ok':'', 'gx-posto':'' };
+function _gxMatch(d, term){ if(!term) return true; const t=String(term).toLowerCase(); return [d.protocolo,d.rota,d.placa,d.origem,d.destino,d.statusSM,d.riscoTexto].some(x=>String(x||'').toLowerCase().includes(t)); }
 function _gxFill(key, rows, rowFn, colspan){
   const cnt=$('#'+key+'-cnt'); if(cnt) cnt.textContent=rows.length;
   const tb=$('#'+key+'-tbody'); if(!tb) return;
@@ -1360,7 +1362,7 @@ function renderGestao(){
   const etd = etdAll.filter(d => !d.finalizada && !d.naoPrioritaria && !d.naoIniciada && !d.divergenciaSM);
   const eta = (DASHBOARD_DATA.eta || []).filter(d => !d.ehXpt);
   const naoBipou = eta.filter(d => d.classificacao === 'cinza').sort((a,b)=> (a.horarioMax?+new Date(a.horarioMax):9e15) - (b.horarioMax?+new Date(b.horarioMax):9e15));
-  _gxFill('gx-eta', naoBipou, _gxEtaRow, 7);
+  _gxFill('gx-eta', naoBipou.filter(d=>_gxMatch(d,_gxSearch['gx-eta'])), _gxEtaRow, 7);
   const parados = etd.filter(d=>d.parado).length;
   const risco   = etd.filter(d=>d.risco==='amarelo').length;
   const atraso  = etd.filter(d=>d.risco==='vermelho').length;
@@ -1374,12 +1376,12 @@ function renderGestao(){
     ['var(--grey)','Aguardando bipagem · ETA', naoBipou.length, 'eta'],
     ['var(--green)','Em viagem (prioritárias)', etd.length, 'etd-todos'],
   ].map(([c,l,v,jump])=>`<div class="ca-row gx-jump" data-jump="${jump}"><span class="ca-dot" style="background:${c}"></span><div style="flex:1">${l}</div><b style="font-family:var(--font-num)">${v}</b><span class="gx-arrow">›</span></div>`).join('');
-  const riscoAtencao = etd.filter(d => d.risco==='vermelho' || d.risco==='amarelo' || d.parado).sort((a,b)=> ((b.risco==='vermelho'?2:(b.parado?1:0)) - (a.risco==='vermelho'?2:(a.parado?1:0))) || ((b.kmMedio||0)-(a.kmMedio||0)));
-  _gxFill('gx-risco', riscoAtencao, _gxEtdRowFaixa, 10);
-  const noPrazo = etd.filter(d => d.risco==='verde' && !d.parado).sort((a,b)=>(a.kmMedio||0)-(b.kmMedio||0));
-  _gxFill('gx-ok', noPrazo, _gxEtdRow, 9);
+  const riscoAtencao = etd.filter(d => d.risco==='vermelho' || d.risco==='amarelo').sort((a,b)=> ((b.risco==='vermelho'?1:0) - (a.risco==='vermelho'?1:0)) || ((b.kmMedio||0)-(a.kmMedio||0)));
+  _gxFill('gx-risco', riscoAtencao.filter(d=>_gxMatch(d,_gxSearch['gx-risco'])), _gxEtdRowFaixa, 10);
+  const noPrazo = etd.filter(d => d.risco==='verde').sort((a,b)=>(a.kmMedio||0)-(b.kmMedio||0));
+  _gxFill('gx-ok', noPrazo.filter(d=>_gxMatch(d,_gxSearch['gx-ok'])), _gxEtdRow, 9);
   const posto = etdAll.filter(d => d.postoFiscal && !d.naoIniciada).sort((a,b)=>(a.postoKm==null?1e9:a.postoKm)-(b.postoKm==null?1e9:b.postoKm));
-  _gxFill('gx-posto', posto, _gxPostoRow, 10);
+  _gxFill('gx-posto', posto.filter(d=>_gxMatch(d,_gxSearch['gx-posto'])), _gxPostoRow, 10);
 }
 function renderOfensores(){
   const all = buildOfensores();
@@ -2973,6 +2975,7 @@ async function boot(){
   bindValidacao();
   { const xs = $('#f-xpt-search'); if(xs) xs.addEventListener('input', () => { _xptSearch = xs.value; renderXptTable(); }); }
   startHealthMonitor();
+  document.querySelectorAll('.gx-search').forEach(inp => inp.addEventListener('input', () => { _gxSearch[inp.dataset.gx] = inp.value; renderGestao(); }));
   const savedTab = restoreView();   // recupera filtros + aba ativa salvos
 
   // Aviso: aberto como arquivo (file://) bloqueia o fetch dos CSVs do Google
