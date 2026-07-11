@@ -377,11 +377,11 @@
   .id-proto, .id-travel { background:#f2f5f9; color:#8792a3; border:1px solid #e6eaf1; }
   .ocor-empty { color: var(--text-dim); }
   /* ordenação por cabeçalho */
-  .table-wrap thead th.sortable { cursor:pointer; user-select:none; transition: color .12s ease; }
-  .table-wrap thead th.sortable:hover { color: var(--text); }
-  .table-wrap thead th[data-sort]{ color: var(--yellow-dim); }
-  .table-wrap thead th[data-sort]::after { content:'↑'; margin-left:5px; font-size:10px; }
-  .table-wrap thead th[data-sort="desc"]::after { content:'↓'; }
+  .table-wrap thead th.sortable, .table-scroll thead th.sortable { cursor:pointer; user-select:none; transition: color .12s ease; }
+  .table-wrap thead th.sortable:hover, .table-scroll thead th.sortable:hover { color: var(--text); }
+  .table-wrap thead th[data-sort], .table-scroll thead th[data-sort]{ color: var(--yellow-dim); }
+  .table-wrap thead th[data-sort]::after, .table-scroll thead th[data-sort]::after { content:'↑'; margin-left:5px; font-size:10px; }
+  .table-wrap thead th[data-sort="desc"]::after, .table-scroll thead th[data-sort="desc"]::after { content:'↓'; }
   /* botão exportar CSV */
   .chip-export { background: var(--bg-panel); border:1px solid var(--border); color: var(--text); border-radius:8px; padding:7px 12px; font-size:12px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition: all .15s ease; }
   .chip-export:hover { border-color: var(--green); color: var(--green); transform: translateY(-1px); }
@@ -1249,7 +1249,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=34"></script>
+<script src="app.js?v=36"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">

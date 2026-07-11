@@ -396,13 +396,22 @@ function enrichData(){
       if(!d.horarioReal && b.origemATA) d.horarioReal = parseDateBR(b.origemATA);
     }
     // limpa "#N/A" das colunas de exibição (mostra vazio em vez do erro)
-    ['rota','motorista','placa','origem','destino','status','statusK','statusL','statusViagem','segundaBipagem'].forEach(k => { if(isNA(d[k])) d[k] = ''; });
+    ['rota','motorista','placa','origem','destino','status','statusK','statusL','statusViagem','segundaBipagem','segundaBipagemReal'].forEach(k => { if(isNA(d[k])) d[k] = ''; });
+    // Coletas: H ("ETA 2ª perna") vira horário quando a rota TEM 2ª coleta ("NÃO" = 1 coleta só).
+    // I ("Bipagem ETA 2ª perna") é a bipagem REAL da 2ª (vazio/"NÃO" = ainda não bipou).
+    // Regra: a rota só deixa de "aguardar" quando bipou a 1ª E — se tem 2 coletas — também a 2ª.
+    const bipou1 = !!d.horarioReal;
+    d.tem2Coleta = !!parseDateBR(d.segundaBipagem);
+    const bipou2 = !!parseDateBR(d.segundaBipagemReal);
+    d.coletasCompletas = bipou1 && (!d.tem2Coleta || bipou2);
     let cls = 'cinza', txt = 'Aguardando chegada';
     d.atrasoMin = null;
-    if(d.horarioReal && d.horarioMax){
+    if(d.coletasCompletas && d.horarioMax){
       const diff = (new Date(d.horarioReal) - new Date(d.horarioMax)) / 60000; // minutos
       if(diff < 0){ cls = 'verde'; txt = 'No prazo'; }
       else { cls = 'vermelho'; txt = 'Atrasado'; d.atrasoMin = Math.round(diff); }
+    } else if(bipou1 && d.tem2Coleta && !bipou2){
+      txt = 'Aguardando 2ª coleta';   // 1ª bipada, falta a 2ª → continua na lista de "não biparam"
     }
     d.classificacao = cls;
     d.classificacaoTexto = txt;
@@ -1584,8 +1593,8 @@ function saidaNoPrazo(r){
 // ETD: destino_eta), resgata pra "No prazo".
 function resultadoTol(r){
   if(/no prazo/i.test(r.resultado||'')) return r.resultado;
-  if(preCheckinNoPrazo(r)) return 'No prazo';   // pré check-in no destino dentro do prazo → vale ETA e ETD (GPS prova a chegada)
   const isEta = (r.fase||'ETD')==='ETA';
+  if(!isEta && preCheckinNoPrazo(r)) return 'No prazo';   // pré check-in só vale pra ETD (chegada no destino); no ETA usa a bipagem real
   const oficial = parseDateBR(isEta ? r.saida_programada : r.destino_eta);
   const real = parseDateBR(r.chegada);
   if(oficial && real && new Date(real).getTime() <= new Date(oficial).getTime() + TOLERANCIA_MIN*60000) return 'No prazo';
@@ -3289,7 +3298,8 @@ function mapEtaRow(row){
     // --- por POSIÇÃO de coluna (definido pelo Caio) ---
     horarioMax:  parseDateBR(cell(row,'F')),  // F = horário máximo de chegada
     horarioReal: parseDateBR(cell(row,'G')),  // G = horário real da chegada
-    segundaBipagem: cell(row,'H'),            // H = 2ª bipagem (viagens com 2 pontos de coleta)
+    segundaBipagem: cell(row,'H'),            // H = ETA 2ª perna (prazo da 2ª coleta; "NÃO" = rota de 1 coleta só)
+    segundaBipagemReal: cell(row,'I'),        // I = Bipagem ETA 2ª perna (bipagem REAL da 2ª coleta; vazio/"NÃO" = ainda não bipou)
     statusK:     cell(row,'K'),               // K = status da rota
     statusL:     cell(row,'L'),               // L = status da rota
     statusViagem: cell(row,'U')               // U = status da viagem
