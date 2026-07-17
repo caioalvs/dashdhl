@@ -987,30 +987,30 @@
         </div>
 
         <div class="kpi-row">
-          <div class="kpi-card k-total desc-click" data-desc-filtro="">
+          <div class="kpi-card k-total">
             <div class="kpi-label">Total de descargas</div>
             <div class="kpi-value tabular" id="desc-kpi-total">0</div>
-            <div class="kpi-sub">Clique p/ limpar o filtro</div>
+            <div class="kpi-sub">Entregas no destino final</div>
           </div>
-          <div class="kpi-card k-grey desc-click" data-desc-filtro="acaminho">
+          <div class="kpi-card k-grey desc-click" data-desc-goto="desc-sec-caminho">
             <div class="kpi-label">A caminho</div>
             <div class="kpi-value tabular" id="desc-kpi-caminho">0</div>
             <div class="kpi-sub">Saiu da origem, ainda não chegou</div>
           </div>
-          <div class="kpi-card k-amber desc-click" data-desc-filtro="pendente">
+          <div class="kpi-card k-amber desc-click" data-desc-goto="desc-sec-pend">
             <div class="kpi-label">Pendentes de descarga</div>
             <div class="kpi-value tabular" id="desc-kpi-pend">0</div>
             <div class="kpi-sub">Chegou, descarregamento não finalizado</div>
           </div>
-          <div class="kpi-card k-green desc-click" data-desc-filtro="descarregado">
+          <div class="kpi-card k-green desc-click" data-desc-goto="desc-sec-desc">
             <div class="kpi-label">Descarregados</div>
             <div class="kpi-value tabular" id="desc-kpi-desc">0</div>
             <div class="kpi-sub">Descarregamento concluído</div>
           </div>
-          <div class="kpi-card k-red desc-click" data-desc-filtro="fora">
+          <div class="kpi-card k-red desc-click" data-desc-goto="desc-sec-desc">
             <div class="kpi-label">Fora do prazo</div>
             <div class="kpi-value tabular" id="desc-kpi-atraso">0</div>
-            <div class="kpi-sub">Fim após o prazo (ou prazo estourado)</div>
+            <div class="kpi-sub">Descarga após o prazo (relativo à chegada)</div>
           </div>
           <div class="kpi-card k-total">
             <div class="kpi-label">Taxa no prazo</div>
@@ -1046,17 +1046,27 @@
         </div>
 
         <div class="table-wrap">
-          <div class="table-head-bar"><span class="dot" style="background:var(--ml-blue)"></span> Mostrando: <b id="desc-table-cap">Todas as descargas</b> <span class="cnt">clique nos cards p/ filtrar</span></div>
-          <div class="table-scroll">
-            <table>
-              <thead><tr>
-                <th>Identificação</th><th>Rota</th><th>Destino</th>
-                <th>Deveria chegar</th><th>Chegou</th><th>Fim da descarga</th><th>Prazo descarga</th>
-                <th class="num">Tempo</th><th>Situação</th>
-              </tr></thead>
-              <tbody id="desc-tbody"></tbody>
-            </table>
-          </div>
+          <div class="table-head-bar" id="desc-sec-caminho"><span class="dot" style="background:var(--grey)"></span> Veículos a caminho do destino <span class="cnt"><b id="desc-caminho-cnt">0</b> rotas</span></div>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Identificação</th><th>Rota</th><th>Destino</th><th>Deveria chegar</th><th>Saiu da origem</th><th>Situação</th></tr></thead>
+            <tbody id="desc-caminho-tbody"></tbody>
+          </table></div>
+        </div>
+
+        <div class="table-wrap">
+          <div class="table-head-bar" id="desc-sec-pend"><span class="dot" style="background:var(--amber)"></span> Descarregando — pendentes de finalização <span class="cnt"><b id="desc-pend-cnt">0</b> rotas</span></div>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Identificação</th><th>Rota</th><th>Destino</th><th>Chegou</th><th class="num">Aguardando há</th><th>Prazo descarga</th><th>Situação</th></tr></thead>
+            <tbody id="desc-pend-tbody"></tbody>
+          </table></div>
+        </div>
+
+        <div class="table-wrap">
+          <div class="table-head-bar" id="desc-sec-desc"><span class="dot" style="background:var(--green)"></span> Descarregados <span class="cnt"><b id="desc-desc-cnt">0</b> rotas</span></div>
+          <div class="table-scroll"><table>
+            <thead><tr><th>Identificação</th><th>Rota</th><th>Destino</th><th>Chegou</th><th>Fim da descarga</th><th>Prazo descarga</th><th class="num">Tempo</th><th>Resultado</th></tr></thead>
+            <tbody id="desc-desc-tbody"></tbody>
+          </table></div>
         </div>
       </section>
 
@@ -1355,7 +1365,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=39"></script>
+<script src="app.js?v=40"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">

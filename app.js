@@ -2692,11 +2692,21 @@ function descNoPeriodo(d){
 function buildDescarga(){
   const base = DASHBOARD_DATA.base || [];
   const now = Date.now();
+  // Multi-trecho: a descarga vale no DESTINO FINAL. Pontos intermediários (destino de um trecho
+  // que é origem de outro trecho da mesma rota) são transbordo, não a entrega — ficam de fora.
+  const origensPorProto = {};
+  base.forEach(b => {
+    const p = String(b.protocolo || '').trim(); if(!p) return;
+    (origensPorProto[p] = origensPorProto[p] || new Set()).add(String(b.origem || '').trim());
+  });
   const out = [];
   base.forEach(b => {
     const estado = String(b.estado || '').trim();
     if(/cancel/i.test(estado)) return;              // cancelada não descarrega
     if(/pendente/i.test(estado)) return;            // rota nem iniciou → fora do escopo
+    const p = String(b.protocolo || '').trim();
+    const destino = String(b.destino || '').trim();
+    if(destino && origensPorProto[p] && origensPorProto[p].has(destino)) return;   // é transbordo (origem de outro trecho) → não é o destino final
     const etaDest = parseDateBR(b.destinoETA);
     if(!etaDest) return;                            // sem destino programado → fora do escopo
     const chegada = parseDateBR(b.destinoATA);
@@ -2705,16 +2715,23 @@ function buildDescarga(){
     const fim     = parseDateBR(b.fimDescarga);
     const prazo   = parseDateBR(b.prazoDescarga);
     const finalizado = /finaliz/i.test(estado);   // a Base manda: rota finalizada = descarga concluída
+    // Prazo da DESCARGA relativo à chegada real: janela planejada (AB−Y) contada a partir de quando chegou.
+    // Assim um atraso de CHEGADA não vira atraso de DESCARGA (a descarga é julgada só por ela mesma).
+    let deadline = prazo;
+    if(chegada && prazo && etaDest){
+      const janelaMs = new Date(prazo).getTime() - new Date(etaDest).getTime();
+      if(janelaMs >= 0) deadline = new Date(new Date(chegada).getTime() + janelaMs).toISOString();
+    }
     let status, classe, resultado = '';
     if(!fim && !finalizado){
       if(!chegada){ status = 'A caminho'; classe = 'cinza'; }
       else {
         status = 'Descarregando'; classe = 'amarelo';
-        if(prazo && now > new Date(prazo).getTime()){ classe = 'vermelho'; resultado = 'Prazo estourado'; }
+        if(deadline && now > new Date(deadline).getTime()){ classe = 'vermelho'; resultado = 'Prazo estourado'; }
       }
     } else {
       status = 'Descarregado';
-      if(fim && prazo && new Date(fim).getTime() > new Date(prazo).getTime()){ classe = 'vermelho'; resultado = 'Atrasado'; }
+      if(fim && deadline && new Date(fim).getTime() > new Date(deadline).getTime()){ classe = 'vermelho'; resultado = 'Atrasado'; }
       else if(fim){ classe = 'verde'; resultado = 'No prazo'; }
       else { classe = 'cinza'; resultado = 'Concluído'; }   // finalizada sem horário de fim → sem como medir o tempo
     }
@@ -2723,7 +2740,7 @@ function buildDescarga(){
     out.push({
       protocolo: b.protocolo, servico: b.servico, origem: b.origem, destino: b.destino,
       etaDest: b.destinoETA, chegada: b.destinoATA, fimDescarga: b.fimDescarga, prazoDescarga: b.prazoDescarga,
-      saidaOrigem: b.origemATD, estado, status, classe, resultado, tempoMin, esperaMin
+      deadline, saidaOrigem: b.origemATD, estado, status, classe, resultado, tempoMin, esperaMin
     });
   });
   return out;
@@ -2794,28 +2811,34 @@ function renderDescarga(){
         plugins:{legend:{position:'bottom', labels:{padding:10, usePointStyle:true, pointStyle:'circle', font:{size:10}}}} }
     });
   }
-  // tabela — aplica filtro de status (KPI) + busca; ordena por criticidade
-  const rows = getDescargaFiltered();
-  const ord = { vermelho:0, amarelo:1, cinza:2, verde:3 };
-  rows.sort((a,b) => (ord[a.classe]-ord[b.classe]) || ((parseDateBR(a.prazoDescarga)||'').localeCompare(parseDateBR(b.prazoDescarga)||'')));
-  const rotulos = { '':'Todas as descargas', acaminho:'A caminho', pendente:'Pendentes de descarga', descarregado:'Descarregados', fora:'Fora do prazo' };
-  const cap = $('#desc-table-cap'); if(cap) cap.textContent = rotulos[_descFiltro] || 'Todas as descargas';
-  const tb = $('#desc-tbody');
-  if(tb){
-    tb.innerHTML = rows.length ? rows.map(d => `
-      <tr data-proto="${escapeHtml(String(d.protocolo||''))}" style="cursor:pointer">
-        <td>${escapeHtml(String(d.protocolo||''))}</td>
-        <td>${escapeHtml(String(d.servico||''))}</td>
-        <td>${escapeHtml(String(d.destino||'—'))}</td>
-        <td>${fmtHora(d.etaDest)}</td>
-        <td>${fmtHora(d.chegada)}</td>
-        <td>${fmtHora(d.fimDescarga)}</td>
-        <td>${fmtHora(d.prazoDescarga)}</td>
-        <td class="num">${descTempoCell(d)}</td>
-        <td>${classeBadge(d.classe, d.resultado || d.status)}</td>
-      </tr>`).join('') : `<tr><td colspan="9"><div class="empty-state">Nenhuma descarga nesta seleção.</div></td></tr>`;
-  }
-  const cnt = $('#desc-count'); if(cnt) cnt.textContent = rows.length;
+  // busca aplicada ao universo (op + período já aplicados); depois separa em 3 tabelas
+  const q = _descSearch.trim().toLowerCase();
+  const vis = universo.filter(d => !q || [d.protocolo,d.servico,d.destino,d.origem].some(v => String(v||'').toLowerCase().includes(q)));
+  const caminhoRows = vis.filter(d => d.status === 'A caminho').sort((a,b)=>(parseDateBR(a.etaDest)||'').localeCompare(parseDateBR(b.etaDest)||''));
+  const pendRows    = vis.filter(d => d.status === 'Descarregando').sort((a,b)=>(b.esperaMin||0)-(a.esperaMin||0));
+  const ordD = { vermelho:0, cinza:1, verde:2 };
+  const descRows    = vis.filter(d => d.status === 'Descarregado').sort((a,b)=>(ordD[a.classe]-ordD[b.classe]) || ((parseDateBR(b.chegada)||'').localeCompare(parseDateBR(a.chegada)||'')));
+  const fill = (id, rws, fn, cols, msg) => { const tb=$('#'+id); if(tb) tb.innerHTML = rws.length ? rws.map(fn).join('') : `<tr><td colspan="${cols}"><div class="empty-state">${msg}</div></td></tr>`; };
+  const cnt = (id,n) => { const e=$('#'+id); if(e) e.textContent = n; };
+  fill('desc-caminho-tbody', caminhoRows, d => `
+    <tr data-proto="${escapeHtml(String(d.protocolo||''))}" style="cursor:pointer">
+      <td>${escapeHtml(String(d.protocolo||''))}</td><td>${escapeHtml(String(d.servico||''))}</td><td>${escapeHtml(String(d.destino||'—'))}</td>
+      <td>${fmtHora(d.etaDest)}</td><td>${fmtHora(d.saidaOrigem)}</td><td>${classeBadge(d.classe,'A caminho')}</td>
+    </tr>`, 6, 'Nenhum veículo a caminho do destino.');
+  cnt('desc-caminho-cnt', caminhoRows.length);
+  fill('desc-pend-tbody', pendRows, d => `
+    <tr data-proto="${escapeHtml(String(d.protocolo||''))}" style="cursor:pointer">
+      <td>${escapeHtml(String(d.protocolo||''))}</td><td>${escapeHtml(String(d.servico||''))}</td><td>${escapeHtml(String(d.destino||'—'))}</td>
+      <td>${fmtHora(d.chegada)}</td><td class="num">${fmtDur(d.esperaMin)}</td><td>${fmtDateTime(d.deadline)||'—'}</td><td>${classeBadge(d.classe, d.resultado||'Descarregando')}</td>
+    </tr>`, 7, 'Nenhuma descarga em andamento agora.');
+  cnt('desc-pend-cnt', pendRows.length);
+  fill('desc-desc-tbody', descRows, d => `
+    <tr data-proto="${escapeHtml(String(d.protocolo||''))}" style="cursor:pointer">
+      <td>${escapeHtml(String(d.protocolo||''))}</td><td>${escapeHtml(String(d.servico||''))}</td><td>${escapeHtml(String(d.destino||'—'))}</td>
+      <td>${fmtHora(d.chegada)}</td><td>${fmtHora(d.fimDescarga)}</td><td>${fmtDateTime(d.deadline)||'—'}</td><td class="num">${fmtDur(d.tempoMin)}</td><td>${classeBadge(d.classe, d.resultado||d.status)}</td>
+    </tr>`, 8, 'Nenhuma descarga concluída no período.');
+  cnt('desc-desc-cnt', descRows.length);
+  const total=$('#desc-count'); if(total) total.textContent = vis.length;
 }
 function bindDescarga(){
   $$('#desc-op-switch .rel-op-btn').forEach(b => b.addEventListener('click', () => {
@@ -2830,16 +2853,15 @@ function bindDescarga(){
     b.classList.add('active');
     renderDescarga();
   }));
-  $$('#view-descarga .kpi-card[data-desc-filtro]').forEach(c => c.addEventListener('click', () => {
-    const f = c.dataset.descFiltro;
-    _descFiltro = (_descFiltro === f) ? '' : f;
-    renderDescarga();
+  $$('#view-descarga .kpi-card[data-desc-goto]').forEach(c => c.addEventListener('click', () => {
+    const sec = document.getElementById(c.dataset.descGoto);
+    if(sec) sec.scrollIntoView({ behavior:'smooth', block:'start' });
   }));
   const s = $('#f-desc-search');
   if(s) s.addEventListener('input', () => { _descSearch = s.value; renderDescarga(); });
-  const tb = $('#desc-tbody');
-  if(tb) tb.addEventListener('click', e => {
-    const tr = e.target.closest('tr[data-proto]');
+  const view = $('#view-descarga');
+  if(view) view.addEventListener('click', e => {
+    const tr = e.target.closest('#view-descarga tbody tr[data-proto]');
     if(tr && tr.dataset.proto) openDetail(tr.dataset.proto);
   });
 }
