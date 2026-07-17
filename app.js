@@ -2704,18 +2704,22 @@ function buildDescarga(){
     if(!saiu && !chegada) return;                   // nem saiu da origem nem chegou → não está em deslocamento
     const fim     = parseDateBR(b.fimDescarga);
     const prazo   = parseDateBR(b.prazoDescarga);
+    const finalizado = /finaliz/i.test(estado);   // a Base manda: rota finalizada = descarga concluída
     let status, classe, resultado = '';
-    if(!chegada){ status = 'A caminho'; classe = 'cinza'; }
-    else if(!fim){
-      status = 'Descarregando'; classe = 'amarelo';
-      if(prazo && now > new Date(prazo).getTime()){ classe = 'vermelho'; resultado = 'Prazo estourado'; }
+    if(!fim && !finalizado){
+      if(!chegada){ status = 'A caminho'; classe = 'cinza'; }
+      else {
+        status = 'Descarregando'; classe = 'amarelo';
+        if(prazo && now > new Date(prazo).getTime()){ classe = 'vermelho'; resultado = 'Prazo estourado'; }
+      }
     } else {
       status = 'Descarregado';
-      if(prazo && new Date(fim).getTime() > new Date(prazo).getTime()){ classe = 'vermelho'; resultado = 'Atrasado'; }
-      else { classe = 'verde'; resultado = 'No prazo'; }
+      if(fim && prazo && new Date(fim).getTime() > new Date(prazo).getTime()){ classe = 'vermelho'; resultado = 'Atrasado'; }
+      else if(fim){ classe = 'verde'; resultado = 'No prazo'; }
+      else { classe = 'cinza'; resultado = 'Concluído'; }   // finalizada sem horário de fim → sem como medir o tempo
     }
-    const tempoMin  = (chegada && fim) ? (new Date(fim) - new Date(chegada)) / 60000 : null;         // durou (já descarregou)
-    const esperaMin = (chegada && !fim) ? (now - new Date(chegada).getTime()) / 60000 : null;        // aguardando descarga
+    const tempoMin  = (chegada && fim) ? (new Date(fim) - new Date(chegada)) / 60000 : null;         // durou (chegada→fim)
+    const esperaMin = (status === 'Descarregando') ? (now - new Date(chegada).getTime()) / 60000 : null;  // só p/ quem está de fato descarregando
     out.push({
       protocolo: b.protocolo, servico: b.servico, origem: b.origem, destino: b.destino,
       etaDest: b.destinoETA, chegada: b.destinoATA, fimDescarga: b.fimDescarga, prazoDescarga: b.prazoDescarga,
@@ -2757,7 +2761,8 @@ function renderDescarga(){
   const foraPrazo = universo.filter(d => d.classe === 'vermelho').length;   // descarregado atrasado + prazo estourado
   const tempos   = desc.map(d => d.tempoMin).filter(v => v != null && v >= 0).sort((a,b) => a - b);
   const tMed     = tempos.length ? tempos[Math.floor(tempos.length/2)] : null;      // mediana
-  const taxa     = desc.length ? Math.round(noPrazo / desc.length * 100) : null;
+  const medidos  = desc.filter(d => d.tempoMin != null).length;             // descargas com horário de fim (mensuráveis)
+  const taxa     = medidos ? Math.round(noPrazo / medidos * 100) : null;
   const set = (id,v) => { const el = $('#'+id); if(el) el.textContent = v; };
   set('desc-kpi-total', universo.length);
   set('desc-kpi-caminho', aCaminho);
