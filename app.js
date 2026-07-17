@@ -2429,7 +2429,21 @@ function openDetail(proto){
     html += `<div class="dt-sec">Portal · auditoria</div>`
       + dtField('Status portal', val.statusPortal) + dtField('Divergência', val.divergencia) + dtField('Placas', val.placas);
   }
-  if(!eta && !etd && !val) html += `<div class="empty-state">Sem dados detalhados para este protocolo.</div>`;
+  const descs = (typeof buildDescarga==='function' ? buildDescarga() : []).filter(d => String(d.protocolo).trim() === proto);
+  if(descs.length){
+    html += `<div class="dt-sec">Descarga · destino</div>`;
+    descs.forEach(d => {
+      const tempoLbl = d.status==='Descarregado' ? 'Tempo de descarga' : (d.status==='Descarregando' ? 'Aguardando descarga há' : 'Tempo');
+      const tempoVal = d.status==='Descarregado' ? fmtDur(d.tempoMin) : (d.status==='Descarregando' ? fmtDur(d.esperaMin) : '—');
+      html += dtField('Destino', `${d.destino||'—'} · ${d.resultado||d.status}`)
+        + dtField('Deveria chegar', fmtHora(d.etaDest))
+        + dtField('Chegou', fmtHora(d.chegada))
+        + dtField('Fim da descarga', fmtHora(d.fimDescarga))
+        + dtField('Prazo de descarga', fmtHora(d.prazoDescarga))
+        + dtField(tempoLbl, tempoVal);
+    });
+  }
+  if(!eta && !etd && !val && !descs.length) html += `<div class="empty-state">Sem dados detalhados para este protocolo.</div>`;
 
   const _n = (etd && etd.rota) || (eta && eta.rota) || '';
   $('#dt-title').textContent = 'Identificação · ' + proto + (_n ? ' · ' + _n : '');
@@ -2656,6 +2670,8 @@ function animateNumbers(){
 /* ======================================================================= */
 let _descTipoOp = 'linehaul';   // Line Haul (padrão) × XPT × Reversa
 let _descSearch = '';
+let _descFiltro = '';           // filtro de status via KPI: '' | acaminho | pendente | descarregado | fora
+let _descPeriodo = 'tudo';      // hoje | 24h | 7d | tudo
 function fmtDur(min){
   if(min == null || isNaN(min)) return '—';
   const m = Math.max(0, Math.round(min));
@@ -2663,71 +2679,101 @@ function fmtDur(min){
   const h = Math.floor(m/60), r = m % 60;
   return r ? `${h}h${String(r).padStart(2,'0')}` : `${h}h`;
 }
+function descRef(d){ return parseDateBR(d.chegada) || parseDateBR(d.etaDest); }   // data p/ o período
+function descNoPeriodo(d){
+  if(_descPeriodo === 'tudo') return true;
+  const ref = descRef(d); if(!ref) return false;
+  const t = new Date(ref).getTime(), now = Date.now();
+  if(_descPeriodo === 'hoje') return new Date(ref).toDateString() === new Date().toDateString();
+  if(_descPeriodo === '24h')  return t >= now - 24*3600e3;
+  if(_descPeriodo === '7d')   return t >= now - 7*24*3600e3;
+  return true;
+}
 function buildDescarga(){
   const base = DASHBOARD_DATA.base || [];
+  const now = Date.now();
   const out = [];
   base.forEach(b => {
     const estado = String(b.estado || '').trim();
     if(/cancel/i.test(estado)) return;              // cancelada não descarrega
+    if(/pendente/i.test(estado)) return;            // rota nem iniciou → fora do escopo
     const etaDest = parseDateBR(b.destinoETA);
     if(!etaDest) return;                            // sem destino programado → fora do escopo
     const chegada = parseDateBR(b.destinoATA);
+    const saiu    = parseDateBR(b.origemATD);
+    if(!saiu && !chegada) return;                   // nem saiu da origem nem chegou → não está em deslocamento
     const fim     = parseDateBR(b.fimDescarga);
     const prazo   = parseDateBR(b.prazoDescarga);
     let status, classe, resultado = '';
     if(!chegada){ status = 'A caminho'; classe = 'cinza'; }
     else if(!fim){
       status = 'Descarregando'; classe = 'amarelo';
-      if(prazo && Date.now() > new Date(prazo).getTime()){ classe = 'vermelho'; resultado = 'Prazo estourado'; }
+      if(prazo && now > new Date(prazo).getTime()){ classe = 'vermelho'; resultado = 'Prazo estourado'; }
     } else {
       status = 'Descarregado';
       if(prazo && new Date(fim).getTime() > new Date(prazo).getTime()){ classe = 'vermelho'; resultado = 'Atrasado'; }
       else { classe = 'verde'; resultado = 'No prazo'; }
     }
-    const tempoMin = (chegada && fim) ? (new Date(fim) - new Date(chegada)) / 60000 : null;
+    const tempoMin  = (chegada && fim) ? (new Date(fim) - new Date(chegada)) / 60000 : null;         // durou (já descarregou)
+    const esperaMin = (chegada && !fim) ? (now - new Date(chegada).getTime()) / 60000 : null;        // aguardando descarga
     out.push({
       protocolo: b.protocolo, servico: b.servico, origem: b.origem, destino: b.destino,
       etaDest: b.destinoETA, chegada: b.destinoATA, fimDescarga: b.fimDescarga, prazoDescarga: b.prazoDescarga,
-      estado, status, classe, resultado, tempoMin
+      saidaOrigem: b.origemATD, estado, status, classe, resultado, tempoMin, esperaMin
     });
   });
   return out;
 }
+function descByOpPeriodo(){   // universo dos KPIs: operação + período (antes do status/busca)
+  return buildDescarga().filter(d => opDe(d) === _descTipoOp && descNoPeriodo(d));
+}
+function descStatusMatch(d){
+  if(!_descFiltro) return true;
+  if(_descFiltro === 'acaminho')     return d.status === 'A caminho';
+  if(_descFiltro === 'pendente')     return d.status === 'Descarregando';
+  if(_descFiltro === 'descarregado') return d.status === 'Descarregado';
+  if(_descFiltro === 'fora')         return d.classe === 'vermelho';
+  return true;
+}
 function getDescargaFiltered(){
   const q = _descSearch.trim().toLowerCase();
-  return buildDescarga().filter(d => {
-    if(opDe(d) !== _descTipoOp) return false;
+  return descByOpPeriodo().filter(d => {
+    if(!descStatusMatch(d)) return false;
     if(!q) return true;
     return [d.protocolo, d.servico, d.destino, d.origem].some(v => String(v||'').toLowerCase().includes(q));
   });
 }
+function descTempoCell(d){
+  if(d.status === 'Descarregado')  return fmtDur(d.tempoMin);
+  if(d.status === 'Descarregando') return `${fmtDur(d.esperaMin)} <span class="hint">aguardando</span>`;
+  return '—';
+}
 function renderDescarga(){
-  const rows = getDescargaFiltered();
-  const aCaminho = rows.filter(d => d.status === 'A caminho').length;
-  const pend     = rows.filter(d => d.status === 'Descarregando').length;
-  const desc     = rows.filter(d => d.status === 'Descarregado');
+  const universo = descByOpPeriodo();
+  const aCaminho = universo.filter(d => d.status === 'A caminho').length;
+  const pend     = universo.filter(d => d.status === 'Descarregando').length;
+  const desc     = universo.filter(d => d.status === 'Descarregado');
   const noPrazo  = desc.filter(d => d.resultado === 'No prazo').length;
-  const atras    = desc.filter(d => d.resultado === 'Atrasado').length;
-  const vencidos = rows.filter(d => d.resultado === 'Prazo estourado').length;
+  const foraPrazo = universo.filter(d => d.classe === 'vermelho').length;   // descarregado atrasado + prazo estourado
   const tempos   = desc.map(d => d.tempoMin).filter(v => v != null && v >= 0).sort((a,b) => a - b);
   const tMed     = tempos.length ? tempos[Math.floor(tempos.length/2)] : null;      // mediana
   const taxa     = desc.length ? Math.round(noPrazo / desc.length * 100) : null;
   const set = (id,v) => { const el = $('#'+id); if(el) el.textContent = v; };
-  set('desc-kpi-total', rows.length);
+  set('desc-kpi-total', universo.length);
   set('desc-kpi-caminho', aCaminho);
   set('desc-kpi-pend', pend);
   set('desc-kpi-desc', desc.length);
-  set('desc-kpi-atraso', atras + vencidos);
+  set('desc-kpi-atraso', foraPrazo);
   set('desc-kpi-taxa', taxa == null ? '—' : taxa + '%');
   set('desc-kpi-tempo', fmtDur(tMed));
   const badge = $('#badgeDescarga'); if(badge) badge.textContent = pend + aCaminho;
+  $$('#view-descarga .kpi-card[data-desc-filtro]').forEach(c => c.classList.toggle('active', !!_descFiltro && c.dataset.descFiltro === _descFiltro));
   // ribbon (mesmo padrão das outras abas)
-  const foraPrazo = atras + vencidos;
   const state = foraPrazo > 0 ? 'vermelho' : (pend > 0 ? 'amarelo' : 'verde');
   let hl;
   if(foraPrazo > 0)      hl = `<span class="hl-strong">${foraPrazo}</span> descarga${foraPrazo>1?'s':''} fora do prazo`;
   else if(pend > 0)      hl = `<span class="hl-strong">${pend}</span> em descarregamento`;
-  else                   hl = rows.length ? 'Descargas em dia' : 'Sem descargas no momento';
+  else                   hl = universo.length ? 'Descargas em dia' : 'Sem descargas no período';
   setRibbon('descarga', state, hl,
     segBar([{n:noPrazo,color:'var(--green)'},{n:foraPrazo,color:'var(--red)'},{n:pend,color:'var(--amber)'},{n:aCaminho,color:'var(--grey)'}]),
     statItem('var(--green)','No prazo',noPrazo)+statItem('var(--red)','Fora do prazo',foraPrazo)+statItem('var(--amber)','Descarregando',pend)+statItem('var(--grey)','A caminho',aCaminho));
@@ -2743,9 +2789,12 @@ function renderDescarga(){
         plugins:{legend:{position:'bottom', labels:{padding:10, usePointStyle:true, pointStyle:'circle', font:{size:10}}}} }
     });
   }
-  // tabela — ordena por criticidade (fora do prazo → descarregando → a caminho → no prazo)
+  // tabela — aplica filtro de status (KPI) + busca; ordena por criticidade
+  const rows = getDescargaFiltered();
   const ord = { vermelho:0, amarelo:1, cinza:2, verde:3 };
   rows.sort((a,b) => (ord[a.classe]-ord[b.classe]) || ((parseDateBR(a.prazoDescarga)||'').localeCompare(parseDateBR(b.prazoDescarga)||'')));
+  const rotulos = { '':'Todas as descargas', acaminho:'A caminho', pendente:'Pendentes de descarga', descarregado:'Descarregados', fora:'Fora do prazo' };
+  const cap = $('#desc-table-cap'); if(cap) cap.textContent = rotulos[_descFiltro] || 'Todas as descargas';
   const tb = $('#desc-tbody');
   if(tb){
     tb.innerHTML = rows.length ? rows.map(d => `
@@ -2757,9 +2806,9 @@ function renderDescarga(){
         <td>${fmtHora(d.chegada)}</td>
         <td>${fmtHora(d.fimDescarga)}</td>
         <td>${fmtHora(d.prazoDescarga)}</td>
-        <td class="num">${fmtDur(d.tempoMin)}</td>
+        <td class="num">${descTempoCell(d)}</td>
         <td>${classeBadge(d.classe, d.resultado || d.status)}</td>
-      </tr>`).join('') : `<tr><td colspan="9"><div class="empty-state">Nenhuma descarga para esta operação.</div></td></tr>`;
+      </tr>`).join('') : `<tr><td colspan="9"><div class="empty-state">Nenhuma descarga nesta seleção.</div></td></tr>`;
   }
   const cnt = $('#desc-count'); if(cnt) cnt.textContent = rows.length;
 }
@@ -2768,6 +2817,17 @@ function bindDescarga(){
     _descTipoOp = b.dataset.op;
     $$('#desc-op-switch .rel-op-btn').forEach(x => x.classList.remove('active'));
     b.classList.add('active');
+    renderDescarga();
+  }));
+  $$('#desc-per-switch .rel-op-btn').forEach(b => b.addEventListener('click', () => {
+    _descPeriodo = b.dataset.per;
+    $$('#desc-per-switch .rel-op-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    renderDescarga();
+  }));
+  $$('#view-descarga .kpi-card[data-desc-filtro]').forEach(c => c.addEventListener('click', () => {
+    const f = c.dataset.descFiltro;
+    _descFiltro = (_descFiltro === f) ? '' : f;
     renderDescarga();
   }));
   const s = $('#f-desc-search');

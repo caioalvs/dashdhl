@@ -119,8 +119,8 @@
   .kpi-card.k-red::before   { background: var(--red); }
   .kpi-card.k-grey::before  { background: var(--grey); }
   .kpi-card.k-blue::before  { background: var(--ml-blue); }
-  .kpi-card.clickable { cursor:pointer; }
-  .kpi-card.clickable:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(20,22,30,.10); border-color: var(--yellow-dim); }
+  .kpi-card.clickable, .kpi-card.desc-click { cursor:pointer; }
+  .kpi-card.clickable:hover, .kpi-card.desc-click:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(20,22,30,.10); border-color: var(--yellow-dim); }
   .kpi-card.active { border-color: var(--yellow); box-shadow: 0 0 0 2px var(--yellow) inset; }
   .kpi-card.active::after { content:'✓ filtrando'; position:absolute; top:9px; left:auto; right:11px; width:auto; text-align:right; font-size:9.5px; font-weight:700; color: var(--yellow-dim); letter-spacing:.4px; background:var(--bg-panel); padding-left:6px; }
   .kpi-label { font-size:11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom:8px; font-weight:600; }
@@ -975,30 +975,39 @@
               <button class="rel-op-btn" data-op="reversa">Reversa</button>
             </div>
           </div>
+          <div class="rel-sw-group">
+            <span class="rel-sw-lbl">Período</span>
+            <div class="rel-op-switch" id="desc-per-switch">
+              <button class="rel-op-btn" data-per="hoje">Hoje</button>
+              <button class="rel-op-btn" data-per="24h">24h</button>
+              <button class="rel-op-btn" data-per="7d">7 dias</button>
+              <button class="rel-op-btn active" data-per="tudo">Tudo</button>
+            </div>
+          </div>
         </div>
 
         <div class="kpi-row">
-          <div class="kpi-card k-total">
+          <div class="kpi-card k-total desc-click" data-desc-filtro="">
             <div class="kpi-label">Total de descargas</div>
             <div class="kpi-value tabular" id="desc-kpi-total">0</div>
-            <div class="kpi-sub">Trechos com destino programado</div>
+            <div class="kpi-sub">Clique p/ limpar o filtro</div>
           </div>
-          <div class="kpi-card k-grey">
+          <div class="kpi-card k-grey desc-click" data-desc-filtro="acaminho">
             <div class="kpi-label">A caminho</div>
             <div class="kpi-value tabular" id="desc-kpi-caminho">0</div>
-            <div class="kpi-sub">Ainda não chegou no destino</div>
+            <div class="kpi-sub">Saiu da origem, ainda não chegou</div>
           </div>
-          <div class="kpi-card k-amber">
+          <div class="kpi-card k-amber desc-click" data-desc-filtro="pendente">
             <div class="kpi-label">Pendentes de descarga</div>
             <div class="kpi-value tabular" id="desc-kpi-pend">0</div>
             <div class="kpi-sub">Chegou, descarregamento não finalizado</div>
           </div>
-          <div class="kpi-card k-green">
+          <div class="kpi-card k-green desc-click" data-desc-filtro="descarregado">
             <div class="kpi-label">Descarregados</div>
             <div class="kpi-value tabular" id="desc-kpi-desc">0</div>
             <div class="kpi-sub">Descarregamento concluído</div>
           </div>
-          <div class="kpi-card k-red">
+          <div class="kpi-card k-red desc-click" data-desc-filtro="fora">
             <div class="kpi-label">Fora do prazo</div>
             <div class="kpi-value tabular" id="desc-kpi-atraso">0</div>
             <div class="kpi-sub">Fim após o prazo (ou prazo estourado)</div>
@@ -1037,6 +1046,7 @@
         </div>
 
         <div class="table-wrap">
+          <div class="table-head-bar"><span class="dot" style="background:var(--ml-blue)"></span> Mostrando: <b id="desc-table-cap">Todas as descargas</b> <span class="cnt">clique nos cards p/ filtrar</span></div>
           <div class="table-scroll">
             <table>
               <thead><tr>
@@ -1345,7 +1355,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=37"></script>
+<script src="app.js?v=38"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">
