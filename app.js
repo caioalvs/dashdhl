@@ -2715,13 +2715,9 @@ function buildDescarga(){
     const fim     = parseDateBR(b.fimDescarga);
     const prazo   = parseDateBR(b.prazoDescarga);
     const finalizado = /finaliz/i.test(estado);   // a Base manda: rota finalizada = descarga concluída
-    // Prazo da DESCARGA relativo à chegada real: janela planejada (AB−Y) contada a partir de quando chegou.
-    // Assim um atraso de CHEGADA não vira atraso de DESCARGA (a descarga é julgada só por ela mesma).
-    let deadline = prazo;
-    if(chegada && prazo && etaDest){
-      const janelaMs = new Date(prazo).getTime() - new Date(etaDest).getTime();
-      if(janelaMs >= 0) deadline = new Date(new Date(chegada).getTime() + janelaMs).toISOString();
-    }
+    // Atraso da descarga = horário que deveria descarregar (AB) × horário que descarregou (AA/fim).
+    // Prazo absoluto da planilha — não envolve a chegada.
+    const deadline = prazo;
     let status, classe, resultado = '';
     if(!fim && !finalizado){
       if(!chegada){ status = 'A caminho'; classe = 'cinza'; }
