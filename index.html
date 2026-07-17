@@ -699,6 +699,7 @@
       <button class="tab-btn" data-tab="gestao"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="4" width="3" height="14"/></svg></span><span class="nav-lbl">GESTÃO</span></button>
       <button class="tab-btn active" data-tab="eta"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12l4 4 4-4"/></svg></span><span class="nav-lbl">ETA</span><span class="tab-badge" id="badgeEta">0</span></button>
       <button class="tab-btn" data-tab="etd"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="14" height="12" rx="1.5"/><path d="M15 8h4l4 4v4h-8z"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/></svg></span><span class="nav-lbl">ETD</span><span class="tab-badge" id="badgeEtd">0</span></button>
+      <button class="tab-btn" data-tab="descarga"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"/><path d="M8 9l4 4 4-4"/><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/></svg></span><span class="nav-lbl">DESCARGA</span><span class="tab-badge" id="badgeDescarga">0</span></button>
       <button class="tab-btn" data-tab="xpt"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><span class="nav-lbl">XPT</span><span class="tab-badge" id="badgeXpt">0</span></button>
       <button class="tab-btn" data-tab="validacao"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span><span class="nav-lbl">PORTAL</span><span class="tab-badge" id="badgeVal">0</span></button>
       <div class="nav-label" style="margin-top:8px">Visão</div>
@@ -951,6 +952,101 @@
             <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Progresso</th><th class="num">Km Faltante</th><th class="num">Km/h médio</th><th>Situação</th><th class="num">Km até o posto</th><th>Status SM</th></tr></thead>
             <tbody id="etd-tbody-posto"></tbody>
           </table></div>
+        </div>
+      </section>
+
+      <!-- ===================== DESCARGA ===================== -->
+      <section id="view-descarga" style="display:none;">
+        <div class="ops-ribbon" id="ribbon-descarga">
+          <div class="ops-left">
+            <div class="ops-eyebrow">Status da operação · Descarregamento no destino</div>
+            <div class="ops-headline" id="descarga-ops-headline">—</div>
+          </div>
+          <div class="ops-stats" id="descarga-ops-stats"></div>
+          <div class="ops-bar" id="descarga-ops-bar"></div>
+        </div>
+
+        <div class="rel-switch-row">
+          <div class="rel-sw-group">
+            <span class="rel-sw-lbl">Operação</span>
+            <div class="rel-op-switch" id="desc-op-switch">
+              <button class="rel-op-btn active" data-op="linehaul">Line Haul</button>
+              <button class="rel-op-btn" data-op="xpt">XPT</button>
+              <button class="rel-op-btn" data-op="reversa">Reversa</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="kpi-row">
+          <div class="kpi-card k-total">
+            <div class="kpi-label">Total de descargas</div>
+            <div class="kpi-value tabular" id="desc-kpi-total">0</div>
+            <div class="kpi-sub">Trechos com destino programado</div>
+          </div>
+          <div class="kpi-card k-grey">
+            <div class="kpi-label">A caminho</div>
+            <div class="kpi-value tabular" id="desc-kpi-caminho">0</div>
+            <div class="kpi-sub">Ainda não chegou no destino</div>
+          </div>
+          <div class="kpi-card k-amber">
+            <div class="kpi-label">Pendentes de descarga</div>
+            <div class="kpi-value tabular" id="desc-kpi-pend">0</div>
+            <div class="kpi-sub">Chegou, descarregamento não finalizado</div>
+          </div>
+          <div class="kpi-card k-green">
+            <div class="kpi-label">Descarregados</div>
+            <div class="kpi-value tabular" id="desc-kpi-desc">0</div>
+            <div class="kpi-sub">Descarregamento concluído</div>
+          </div>
+          <div class="kpi-card k-red">
+            <div class="kpi-label">Fora do prazo</div>
+            <div class="kpi-value tabular" id="desc-kpi-atraso">0</div>
+            <div class="kpi-sub">Fim após o prazo (ou prazo estourado)</div>
+          </div>
+          <div class="kpi-card k-total">
+            <div class="kpi-label">Taxa no prazo</div>
+            <div class="kpi-value tabular" id="desc-kpi-taxa">—</div>
+            <div class="kpi-sub">Das descargas já concluídas</div>
+          </div>
+          <div class="kpi-card k-amber">
+            <div class="kpi-label">Tempo médio de descarga</div>
+            <div class="kpi-value tabular" id="desc-kpi-tempo">—</div>
+            <div class="kpi-sub">Mediana (chegada → fim)</div>
+          </div>
+        </div>
+
+        <div class="chart-row-small">
+          <div class="panel">
+            <h3>Situação das descargas</h3>
+            <div class="chart-box-sm"><canvas id="chartDescStatus"></canvas></div>
+          </div>
+          <div class="panel">
+            <h3>Como ler</h3>
+            <div class="chart-aside">
+              <p><b>A caminho</b> — ainda não chegou (sem chegada real no destino).</p>
+              <p><b>Descarregando</b> — chegou, mas ainda não finalizou o descarregamento.</p>
+              <p><b>Fora do prazo</b> — finalizou depois do prazo, ou o prazo já venceu com a descarga em aberto.</p>
+              <p><b>Tempo de descarga</b> = do horário que chegou (Z) até o fim (AA).</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <input type="text" class="search" id="f-desc-search" placeholder="Buscar protocolo, rota, destino...">
+          <div class="result-count"><b id="desc-count">0</b> descargas exibidas</div>
+        </div>
+
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table>
+              <thead><tr>
+                <th>Identificação</th><th>Rota</th><th>Destino</th>
+                <th>Deveria chegar</th><th>Chegou</th><th>Fim da descarga</th><th>Prazo descarga</th>
+                <th class="num">Tempo</th><th>Situação</th>
+              </tr></thead>
+              <tbody id="desc-tbody"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -1249,7 +1345,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=36"></script>
+<script src="app.js?v=37"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">
