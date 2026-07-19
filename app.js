@@ -2433,14 +2433,15 @@ function openDetail(proto){
   if(descs.length){
     html += `<div class="dt-sec">Descarga · destino</div>`;
     descs.forEach(d => {
-      const tempoLbl = d.status==='Descarregado' ? 'Tempo de descarga' : (d.status==='Descarregando' ? 'Aguardando descarga há' : 'Tempo');
-      const tempoVal = d.status==='Descarregado' ? fmtDur(d.tempoMin) : (d.status==='Descarregando' ? fmtDur(d.esperaMin) : '—');
+      const tempoLbl = d.status==='Descarregado' ? 'Descarga vs prazo' : (d.status==='Descarregando' ? 'Aguardando descarga há' : 'Tempo');
+      const tempoVal = d.status==='Descarregado' ? fmtDelta(d.deltaMin) : (d.status==='Descarregando' ? fmtDur(d.esperaMin) : '—');
       html += dtField('Destino', `${d.destino||'—'} · ${d.resultado||d.status}`)
         + dtField('Deveria chegar', fmtHora(d.etaDest))
         + dtField('Chegou', fmtHora(d.chegada))
         + dtField('Fim da descarga', fmtHora(d.fimDescarga))
         + dtField('Prazo de descarga', fmtHora(d.prazoDescarga))
-        + dtField(tempoLbl, tempoVal);
+        + dtField(tempoLbl, tempoVal)
+        + (d.tempoMin != null ? dtField('Permanência no pátio', fmtDur(d.tempoMin)) : '');
     });
   }
   if(!eta && !etd && !val && !descs.length) html += `<div class="empty-state">Sem dados detalhados para este protocolo.</div>`;
@@ -2679,6 +2680,13 @@ function fmtDur(min){
   const h = Math.floor(m/60), r = m % 60;
   return r ? `${h}h${String(r).padStart(2,'0')}` : `${h}h`;
 }
+// Tempo da descarga vs prazo (AB → AA): negativo = antecipada, positivo = atraso.
+function fmtDelta(min){
+  if(min == null || isNaN(min)) return '—';
+  const m = Math.round(min);
+  if(m === 0) return 'no horário';
+  return (m < 0 ? '−' : '+') + fmtDur(Math.abs(m));
+}
 function descRef(d){ return parseDateBR(d.chegada) || parseDateBR(d.etaDest); }   // data p/ o período
 function descNoPeriodo(d){
   if(_descPeriodo === 'tudo') return true;
@@ -2728,15 +2736,21 @@ function buildDescarga(){
     } else {
       status = 'Descarregado';
       if(fim && deadline && new Date(fim).getTime() > new Date(deadline).getTime()){ classe = 'vermelho'; resultado = 'Atrasado'; }
+      else if(fim && deadline && chegada && etaDest && new Date(chegada).getTime() < new Date(etaDest).getTime()){
+        classe = 'verde'; resultado = 'No prazo · Descarga antecipada';   // chegou cedo e descarregou dentro do prazo
+      }
       else if(fim){ classe = 'verde'; resultado = 'No prazo'; }
-      else { classe = 'cinza'; resultado = 'Concluído'; }   // finalizada sem horário de fim → sem como medir o tempo
+      else { classe = 'cinza'; resultado = 'Concluído'; }   // finalizada sem horário de fim → sem como medir
     }
-    const tempoMin  = (chegada && fim) ? (new Date(fim) - new Date(chegada)) / 60000 : null;         // durou (chegada→fim)
+    // Tempo da descarga = prazo que deveria descarregar (AB) → horário que descarregou (AA).
+    // Negativo = descarregou antes do prazo (antecipada); positivo = atraso.
+    const deltaMin  = (fim && deadline) ? (new Date(fim) - new Date(deadline)) / 60000 : null;
+    const tempoMin  = (chegada && fim) ? (new Date(fim) - new Date(chegada)) / 60000 : null;         // permanência no pátio (referência)
     const esperaMin = (status === 'Descarregando') ? (now - new Date(chegada).getTime()) / 60000 : null;  // só p/ quem está de fato descarregando
     out.push({
       protocolo: b.protocolo, servico: b.servico, origem: b.origem, destino: b.destino,
       etaDest: b.destinoETA, chegada: b.destinoATA, fimDescarga: b.fimDescarga, prazoDescarga: b.prazoDescarga,
-      deadline, saidaOrigem: b.origemATD, estado, status, classe, resultado, tempoMin, esperaMin
+      deadline, saidaOrigem: b.origemATD, estado, status, classe, resultado, deltaMin, tempoMin, esperaMin
     });
   });
   return out;
@@ -2772,9 +2786,9 @@ function renderDescarga(){
   const desc     = universo.filter(d => d.status === 'Descarregado');
   const noPrazo  = desc.filter(d => d.resultado === 'No prazo').length;
   const foraPrazo = universo.filter(d => d.classe === 'vermelho').length;   // descarregado atrasado + prazo estourado
-  const tempos   = desc.map(d => d.tempoMin).filter(v => v != null && v >= 0).sort((a,b) => a - b);
-  const tMed     = tempos.length ? tempos[Math.floor(tempos.length/2)] : null;      // mediana
-  const medidos  = desc.filter(d => d.tempoMin != null).length;             // descargas com horário de fim (mensuráveis)
+  const tempos   = desc.map(d => d.deltaMin).filter(v => v != null).sort((a,b) => a - b);
+  const tMed     = tempos.length ? tempos[Math.floor(tempos.length/2)] : null;      // mediana do desvio vs prazo
+  const medidos  = desc.filter(d => d.deltaMin != null).length;             // descargas mensuráveis (com fim e prazo)
   const taxa     = medidos ? Math.round(noPrazo / medidos * 100) : null;
   const set = (id,v) => { const el = $('#'+id); if(el) el.textContent = v; };
   set('desc-kpi-total', universo.length);
@@ -2783,7 +2797,7 @@ function renderDescarga(){
   set('desc-kpi-desc', desc.length);
   set('desc-kpi-atraso', foraPrazo);
   set('desc-kpi-taxa', taxa == null ? '—' : taxa + '%');
-  set('desc-kpi-tempo', fmtDur(tMed));
+  set('desc-kpi-tempo', fmtDelta(tMed));
   const badge = $('#badgeDescarga'); if(badge) badge.textContent = pend + aCaminho;
   $$('#view-descarga .kpi-card[data-desc-filtro]').forEach(c => c.classList.toggle('active', !!_descFiltro && c.dataset.descFiltro === _descFiltro));
   // ribbon (mesmo padrão das outras abas)
@@ -2831,7 +2845,7 @@ function renderDescarga(){
   fill('desc-desc-tbody', descRows, d => `
     <tr data-proto="${escapeHtml(String(d.protocolo||''))}" style="cursor:pointer">
       <td>${escapeHtml(String(d.protocolo||''))}</td><td>${escapeHtml(String(d.servico||''))}</td><td>${escapeHtml(String(d.destino||'—'))}</td>
-      <td>${fmtHora(d.chegada)}</td><td>${fmtHora(d.fimDescarga)}</td><td>${fmtDateTime(d.deadline)||'—'}</td><td class="num">${fmtDur(d.tempoMin)}</td><td>${classeBadge(d.classe, d.resultado||d.status)}</td>
+      <td>${fmtHora(d.chegada)}</td><td>${fmtHora(d.fimDescarga)}</td><td>${fmtDateTime(d.deadline)||'—'}</td><td class="num">${fmtDelta(d.deltaMin)}</td><td>${classeBadge(d.classe, d.resultado||d.status)}</td>
     </tr>`, 8, 'Nenhuma descarga concluída no período.');
   cnt('desc-desc-cnt', descRows.length);
   const total=$('#desc-count'); if(total) total.textContent = vis.length;

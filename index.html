@@ -1018,9 +1018,9 @@
             <div class="kpi-sub">Das descargas já concluídas</div>
           </div>
           <div class="kpi-card k-amber">
-            <div class="kpi-label">Tempo médio de descarga</div>
+            <div class="kpi-label">Descarga vs prazo</div>
             <div class="kpi-value tabular" id="desc-kpi-tempo">—</div>
-            <div class="kpi-sub">Mediana (chegada → fim)</div>
+            <div class="kpi-sub">Mediana prazo → fim (− = antecipada)</div>
           </div>
         </div>
 
@@ -1064,7 +1064,7 @@
         <div class="table-wrap">
           <div class="table-head-bar" id="desc-sec-desc"><span class="dot" style="background:var(--green)"></span> Descarregados <span class="cnt"><b id="desc-desc-cnt">0</b> rotas</span></div>
           <div class="table-scroll"><table>
-            <thead><tr><th>Identificação</th><th>Rota</th><th>Destino</th><th>Chegou</th><th>Fim da descarga</th><th>Prazo descarga</th><th class="num">Tempo</th><th>Resultado</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Rota</th><th>Destino</th><th>Chegou</th><th>Fim da descarga</th><th>Prazo descarga</th><th class="num">Descarga vs prazo</th><th>Resultado</th></tr></thead>
             <tbody id="desc-desc-tbody"></tbody>
           </table></div>
         </div>
@@ -1365,7 +1365,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=41"></script>
+<script src="app.js?v=42"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">
