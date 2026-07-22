@@ -1513,7 +1513,7 @@ async function fetchHistorico(startISO, endISO){
   // ainda não existem no banco (ou o cache de schema do PostgREST está velho), o select inteiro
   // falharia e o histórico sumiria — por isso caímos pro básico automaticamente.
   const core  = 'rostering_id,route_id,servico,estado,resultado,pacotes,chegada,saida_programada,saida_real,causa_raiz,origem,destino,motivo_cancelamento,trecho,data,fase';
-  const extra = ',pre_check_destino,destino_eta,origem_eta';
+  const extra = ',pre_check_destino,destino_eta,origem_eta,fim_descarga,prazo_descarga';
   const headers = { apikey: SUPABASE.anon, Authorization: 'Bearer ' + SUPABASE.anon };
   async function pull(cols){
     let all = [], offset = 0; const page = 1000;
@@ -1640,6 +1640,7 @@ async function renderRelatorios(){
   _relData.fin  = res.rows.filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r) && relFaseMatch(r));
   _relData.canc = res.rows.filter(r => /cancel/i.test(r.estado||'') && relTipoMatch(r));   // cancelados (todos ETD no dado) — mostrados no bloco ETA
   _relData.eta  = res.rows.filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r) && (r.fase||'ETD')==='ETA');   // chegada na origem (pontualidade ETA)
+  _relData.desc = res.rows.filter(r => /finaliz/i.test(r.estado||'') && relTipoMatch(r) && (r.fase||'ETD')!=='ETA');   // descarga no destino (registros ETD; ignora o toggle de fase)
   // Janela de HORAS: corte fino pelo timestamp de chegada (o campo data é só data).
   const _jan = relJanela();
   if(_jan){
@@ -1647,6 +1648,7 @@ async function renderRelatorios(){
     _relData.fin  = _relData.fin.filter(inWin);
     _relData.canc = _relData.canc.filter(inWin);
     _relData.eta  = _relData.eta.filter(inWin);
+    _relData.desc = _relData.desc.filter(inWin);
   }
   _relCancMotivo = null; _relAtrasoTipo = null;
   _relRowSeq = 0; for(const kk in _relRowMap) delete _relRowMap[kk];
@@ -1679,7 +1681,46 @@ async function renderRelatorios(){
   renderRelDestinos();
   renderRelRecorrentes();
   renderRelReincidencia();
+  renderRelDescarga();
   renderRelCalendar();
+}
+// ===== Relatório · Descarga no destino (histórico) =====
+function renderRelDescarga(){
+  const el = document.querySelector('#rel-descarga'); if(!el) return;
+  const recs = (_relData && _relData.desc) ? _relData.desc : [];
+  // destino final por protocolo (ignora transbordo = destino que é origem de outro trecho)
+  const origens = {};
+  recs.forEach(r => { const p=_indProto(r); (origens[p]=origens[p]||new Set()).add(String(r.origem||'').trim()); });
+  const rows = [];
+  recs.forEach(r => {
+    const d = String(r.destino||'').trim();
+    const s = origens[_indProto(r)];
+    if(d && s && s.has(d)) return;                 // transbordo → não é o destino final
+    const fim=parseDateBR(r.fim_descarga), prazo=parseDateBR(r.prazo_descarga);
+    if(!fim || !prazo) return;                      // sem como medir
+    const cheg=parseDateBR(r.chegada), eta=parseDateBR(r.destino_eta);
+    const delta=(new Date(fim)-new Date(prazo))/60000;
+    const atrasado = delta>0;
+    rows.push({ destino:d||'—', atrasado, antecip:(!atrasado && cheg && eta && new Date(cheg)<new Date(eta)), delta, pacotes:Number(r.pacotes)||0 });
+  });
+  if(!rows.length){ el.innerHTML = `<div class="empty-state" style="padding:26px">Sem dados de descarga no período. Rode o Apps Script atualizado (grava fim/prazo de descarga) e volte aqui.</div>`; return; }
+  const total=rows.length, atras=rows.filter(x=>x.atrasado).length, noPrazo=total-atras;
+  const taxa=Math.round(noPrazo/total*100);
+  const pacAtraso=rows.filter(x=>x.atrasado).reduce((s,x)=>s+x.pacotes,0);
+  const ds=rows.map(x=>x.delta).sort((a,b)=>a-b); const med=ds[Math.floor(ds.length/2)];
+  const byDest={};
+  rows.forEach(x=>{ const v=(byDest[x.destino]=byDest[x.destino]||{t:0,a:0,d:[],p:0}); v.t++; v.d.push(x.delta); if(x.atrasado){v.a++; v.p+=x.pacotes;} });
+  const rank=Object.entries(byDest).filter(([,v])=>v.t>=3).map(([k,v])=>{ const dd=v.d.slice().sort((a,b)=>a-b); return {destino:k,total:v.t,atras:v.a,taxa:Math.round(v.a/v.t*100),med:dd[Math.floor(dd.length/2)],pac:v.p}; }).sort((a,b)=>b.taxa-a.taxa||b.total-a.total).slice(0,12);
+  el.innerHTML = `
+    <div class="rel-2col" style="margin-bottom:14px">
+      <div class="comp-box"><div class="comp-big ${taxa>=90?'good':taxa>=70?'warn':'bad'}">${taxa}%</div><div class="comp-sub">${noPrazo} de ${total} descargas no prazo (fim ≤ prazo AB)</div></div>
+      <div class="comp-box"><div class="comp-big ${atras?'bad':'good'}">${atras}</div><div class="comp-sub">fora do prazo · ${pacAtraso.toLocaleString('pt-BR')} pacotes impactados</div><div class="comp-gap">desvio mediano ${fmtDelta(med)}</div></div>
+    </div>
+    <div class="table-wrap"><div class="table-head-bar"><span class="dot" style="background:var(--red)"></span> Destinos que mais atrasam a descarga <span class="cnt">mín. 3 descargas</span></div>
+    <div class="table-scroll short"><table>
+      <thead><tr><th>Destino</th><th class="num">Descargas</th><th class="num">Atrasadas</th><th class="num">% atraso</th><th class="num">Desvio mediano</th><th class="num">Pacotes atraso</th></tr></thead>
+      <tbody>${rank.map(x=>`<tr><td>${escapeHtml(x.destino)}</td><td class="num">${x.total}</td><td class="num">${x.atras}</td><td class="num">${x.taxa}%</td><td class="num">${fmtDelta(x.med)}</td><td class="num">${x.pac.toLocaleString('pt-BR')}</td></tr>`).join('')}</tbody>
+    </table></div></div>`;
 }
 // ocorrência em sistema (aba Ocorrências) pelo protocolo; senão a causa raiz do histórico
 function relJustificativa(r){

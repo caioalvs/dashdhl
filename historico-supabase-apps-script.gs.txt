@@ -34,7 +34,8 @@ var C_OCOR = { protocolo: 1, ocorrencia: 15 };
 var C = {
   routeId: 1, rostering: 2, servico: 3, data: 4, trecho: 14, origem: 15,
   origemETA: 16, origemATA: 17, origemETD: 19, origemATD: 20,
-  preCheckOrigem: 22, destino: 24, destinoETA: 25, destinoATA: 26, preCheckDestino: 32,
+  preCheckOrigem: 22, destino: 24, destinoETA: 25, destinoATA: 26,
+  fimDescarga: 27, prazoDescarga: 28, preCheckDestino: 32,
   estado: 39, substatus: 40, pacotes: 37, motivoCancel: 42, causaRaiz: 43
 };
 
@@ -79,6 +80,8 @@ function enviarHistoricoSupabase() {
         saida_programada: txt(r[C.origemETD - 1]),
         saida_real: txt(r[C.origemATD - 1]),
         chegada: txt(r[C.destinoATA - 1]),
+        fim_descarga: txt(r[C.fimDescarga - 1]),      // AA = fim do descarregamento
+        prazo_descarga: txt(r[C.prazoDescarga - 1]),  // AB = prazo pra descarregar
         estado: txt(r[C.estado - 1]),
         resultado: txt(r[C.substatus - 1]),
         pacotes: paraInt(r[C.pacotes - 1]),
