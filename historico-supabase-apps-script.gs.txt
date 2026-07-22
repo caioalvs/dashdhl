@@ -110,6 +110,8 @@ function enviarHistoricoSupabase() {
         saida_programada: fmtDT_(dETA),   // referência: deveria chegar
         saida_real: '',
         chegada: fmtDT_(dATA),            // chegada real na origem
+        fim_descarga: null,               // (descarga é do destino/ETD — no ETA fica null p/ casar as chaves do lote)
+        prazo_descarga: null,
         estado: 'Finalizado',
         resultado: (dATA < dETA) ? 'No prazo' : 'Atrasado',
         pacotes: paraInt(r[C.pacotes - 1]),
