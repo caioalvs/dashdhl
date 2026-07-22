@@ -2750,7 +2750,7 @@ function buildDescarga(){
     out.push({
       protocolo: b.protocolo, servico: b.servico, origem: b.origem, destino: b.destino,
       etaDest: b.destinoETA, chegada: b.destinoATA, fimDescarga: b.fimDescarga, prazoDescarga: b.prazoDescarga,
-      deadline, saidaOrigem: b.origemATD, estado, status, classe, resultado, deltaMin, tempoMin, esperaMin
+      deadline, saidaOrigem: b.origemATD, pacotes: b.pacotes, estado, status, classe, resultado, deltaMin, tempoMin, esperaMin
     });
   });
   return out;
@@ -2796,6 +2796,8 @@ function renderDescarga(){
   set('desc-kpi-pend', pend);
   set('desc-kpi-desc', desc.length);
   set('desc-kpi-atraso', foraPrazo);
+  const pacAtraso = universo.filter(d => d.classe === 'vermelho').reduce((s,d) => s + (Number(d.pacotes)||0), 0);
+  set('desc-kpi-atraso-sub', pacAtraso ? pacAtraso.toLocaleString('pt-BR') + ' pacotes impactados' : 'Descarga após o prazo AB');
   set('desc-kpi-taxa', taxa == null ? '—' : taxa + '%');
   set('desc-kpi-tempo', fmtDelta(tMed));
   const badge = $('#badgeDescarga'); if(badge) badge.textContent = pend + aCaminho;
@@ -2830,23 +2832,24 @@ function renderDescarga(){
   const descRows    = vis.filter(d => d.status === 'Descarregado').sort((a,b)=>(ordD[a.classe]-ordD[b.classe]) || ((parseDateBR(b.chegada)||'').localeCompare(parseDateBR(a.chegada)||'')));
   const fill = (id, rws, fn, cols, msg) => { const tb=$('#'+id); if(tb) tb.innerHTML = rws.length ? rws.map(fn).join('') : `<tr><td colspan="${cols}"><div class="empty-state">${msg}</div></td></tr>`; };
   const cnt = (id,n) => { const e=$('#'+id); if(e) e.textContent = n; };
+  const pk = d => d.pacotes != null ? Number(d.pacotes).toLocaleString('pt-BR') : '—';
   fill('desc-caminho-tbody', caminhoRows, d => `
     <tr data-proto="${escapeHtml(String(d.protocolo||''))}" style="cursor:pointer">
       <td>${escapeHtml(String(d.protocolo||''))}</td><td>${escapeHtml(String(d.servico||''))}</td><td>${escapeHtml(String(d.destino||'—'))}</td>
-      <td>${fmtHora(d.etaDest)}</td><td>${fmtHora(d.saidaOrigem)}</td><td>${classeBadge(d.classe,'A caminho')}</td>
-    </tr>`, 6, 'Nenhum veículo a caminho do destino.');
+      <td>${fmtHora(d.etaDest)}</td><td>${fmtHora(d.saidaOrigem)}</td><td class="num">${pk(d)}</td><td>${classeBadge(d.classe,'A caminho')}</td>
+    </tr>`, 7, 'Nenhum veículo a caminho do destino.');
   cnt('desc-caminho-cnt', caminhoRows.length);
   fill('desc-pend-tbody', pendRows, d => `
     <tr data-proto="${escapeHtml(String(d.protocolo||''))}" style="cursor:pointer">
       <td>${escapeHtml(String(d.protocolo||''))}</td><td>${escapeHtml(String(d.servico||''))}</td><td>${escapeHtml(String(d.destino||'—'))}</td>
-      <td>${fmtHora(d.chegada)}</td><td class="num">${fmtDur(d.esperaMin)}</td><td>${fmtDateTime(d.deadline)||'—'}</td><td>${classeBadge(d.classe, d.resultado||'Descarregando')}</td>
-    </tr>`, 7, 'Nenhuma descarga em andamento agora.');
+      <td>${fmtHora(d.chegada)}</td><td class="num">${fmtDur(d.esperaMin)}</td><td>${fmtDateTime(d.deadline)||'—'}</td><td class="num">${pk(d)}</td><td>${classeBadge(d.classe, d.resultado||'Descarregando')}</td>
+    </tr>`, 8, 'Nenhuma descarga em andamento agora.');
   cnt('desc-pend-cnt', pendRows.length);
   fill('desc-desc-tbody', descRows, d => `
     <tr data-proto="${escapeHtml(String(d.protocolo||''))}" style="cursor:pointer">
       <td>${escapeHtml(String(d.protocolo||''))}</td><td>${escapeHtml(String(d.servico||''))}</td><td>${escapeHtml(String(d.destino||'—'))}</td>
-      <td>${fmtHora(d.chegada)}</td><td>${fmtHora(d.fimDescarga)}</td><td>${fmtDateTime(d.deadline)||'—'}</td><td class="num">${fmtDelta(d.deltaMin)}</td><td>${classeBadge(d.classe, d.resultado||d.status)}</td>
-    </tr>`, 8, 'Nenhuma descarga concluída no período.');
+      <td>${fmtHora(d.chegada)}</td><td>${fmtHora(d.fimDescarga)}</td><td>${fmtDateTime(d.deadline)||'—'}</td><td class="num">${fmtDelta(d.deltaMin)}</td><td class="num">${pk(d)}</td><td>${classeBadge(d.classe, d.resultado||d.status)}</td>
+    </tr>`, 9, 'Nenhuma descarga concluída no período.');
   cnt('desc-desc-cnt', descRows.length);
   const total=$('#desc-count'); if(total) total.textContent = vis.length;
 }
@@ -2869,6 +2872,22 @@ function bindDescarga(){
   }));
   const s = $('#f-desc-search');
   if(s) s.addEventListener('input', () => { _descSearch = s.value; renderDescarga(); });
+  const ex = $('#desc-export');
+  if(ex) ex.addEventListener('click', () => {
+    const q = _descSearch.trim().toLowerCase();
+    const rows = descByOpPeriodo().filter(d => !q || [d.protocolo,d.servico,d.destino,d.origem].some(v => String(v||'').toLowerCase().includes(q)));
+    const fd = x => { const iso = parseDateBR(x); return iso ? fmtDateTime(iso) : (x || ''); };
+    const cols = [
+      {label:'Protocolo', get:d=>d.protocolo}, {label:'Rota', get:d=>d.servico}, {label:'Destino', get:d=>d.destino},
+      {label:'Situação', get:d=>d.resultado||d.status},
+      {label:'Deveria chegar', get:d=>fd(d.etaDest)}, {label:'Chegou', get:d=>fd(d.chegada)},
+      {label:'Fim da descarga', get:d=>fd(d.fimDescarga)}, {label:'Prazo descarga (AB)', get:d=>fd(d.prazoDescarga)},
+      {label:'Descarga vs prazo (min)', get:d=>d.deltaMin!=null?Math.round(d.deltaMin):''},
+      {label:'Aguardando (min)', get:d=>d.esperaMin!=null?Math.round(d.esperaMin):''},
+      {label:'Pacotes', get:d=>d.pacotes!=null?d.pacotes:''}
+    ];
+    downloadCsv(`descarga_${_descTipoOp}_${_descPeriodo}.csv`, toCsv(cols, rows));
+  });
   const view = $('#view-descarga');
   if(view) view.addEventListener('click', e => {
     const tr = e.target.closest('#view-descarga tbody tr[data-proto]');
