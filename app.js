@@ -2825,12 +2825,13 @@ function renderDescarga(){
   const aCaminho = universo.filter(d => d.status === 'A caminho').length;
   const pend     = universo.filter(d => d.status === 'Descarregando').length;
   const desc     = universo.filter(d => d.status === 'Descarregado');
-  const noPrazo  = desc.filter(d => d.resultado === 'No prazo').length;
+  const noPrazo  = desc.filter(d => d.classe === 'verde').length;           // no prazo + antecipada (visual)
   const foraPrazo = universo.filter(d => d.classe === 'vermelho').length;   // descarregado atrasado + prazo estourado
   const tempos   = desc.map(d => d.deltaMin).filter(v => v != null).sort((a,b) => a - b);
   const tMed     = tempos.length ? tempos[Math.floor(tempos.length/2)] : null;      // mediana do desvio vs prazo
   const medidos  = desc.filter(d => d.deltaMin != null).length;             // descargas mensuráveis (com fim e prazo)
-  const taxa     = medidos ? Math.round(noPrazo / medidos * 100) : null;
+  const noPrazoMed = desc.filter(d => d.deltaMin != null && d.deltaMin <= 0).length; // fim ≤ prazo (inclui antecipada)
+  const taxa     = medidos ? Math.round(noPrazoMed / medidos * 100) : null;
   const set = (id,v) => { const el = $('#'+id); if(el) el.textContent = v; };
   set('desc-kpi-total', universo.length);
   set('desc-kpi-caminho', aCaminho);
