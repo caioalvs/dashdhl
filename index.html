@@ -1012,6 +1012,11 @@
             <div class="kpi-value tabular" id="desc-kpi-atraso">0</div>
             <div class="kpi-sub" id="desc-kpi-atraso-sub">Descarga após o prazo AB</div>
           </div>
+          <div class="kpi-card k-grey desc-click" data-desc-goto="desc-sec-semfim">
+            <div class="kpi-label">Sem confirmação de fim</div>
+            <div class="kpi-value tabular" id="desc-kpi-semfim">0</div>
+            <div class="kpi-sub">Chegou e finalizou, sem horário de fim (AA)</div>
+          </div>
           <div class="kpi-card k-total">
             <div class="kpi-label">Taxa no prazo</div>
             <div class="kpi-value tabular" id="desc-kpi-taxa">—</div>
@@ -1067,6 +1072,14 @@
           <div class="table-scroll"><table>
             <thead><tr><th>Identificação</th><th>Rota</th><th>Destino</th><th>Chegou</th><th>Fim da descarga</th><th>Prazo descarga</th><th class="num">Descarga vs prazo</th><th class="num">Pacotes</th><th>Resultado</th></tr></thead>
             <tbody id="desc-desc-tbody"></tbody>
+          </table></div>
+        </div>
+
+        <div class="table-wrap">
+          <div class="table-head-bar" id="desc-sec-semfim"><span class="dot" style="background:var(--grey)"></span> Sem confirmação de fim <span class="hint" style="font-weight:500">chegou e finalizou, mas sem horário de fim (AA)</span> <span class="cnt"><b id="desc-semfim-cnt">0</b> rotas</span></div>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Identificação</th><th>Rota</th><th>Destino</th><th>Chegou</th><th>Prazo descarga</th><th class="num">Pacotes</th><th>Situação</th></tr></thead>
+            <tbody id="desc-semfim-tbody"></tbody>
           </table></div>
         </div>
       </section>
@@ -1377,7 +1390,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=45"></script>
+<script src="app.js?v=46"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">

@@ -2837,6 +2837,7 @@ function renderDescarga(){
   set('desc-kpi-caminho', aCaminho);
   set('desc-kpi-pend', pend);
   set('desc-kpi-desc', desc.length);
+  set('desc-kpi-semfim', desc.filter(d => !parseDateBR(d.fimDescarga)).length);   // finalizada sem horário de fim gravado
   set('desc-kpi-atraso', foraPrazo);
   const pacAtraso = universo.filter(d => d.classe === 'vermelho').reduce((s,d) => s + (Number(d.pacotes)||0), 0);
   set('desc-kpi-atraso-sub', pacAtraso ? pacAtraso.toLocaleString('pt-BR') + ' pacotes impactados' : 'Descarga após o prazo AB');
@@ -2871,7 +2872,9 @@ function renderDescarga(){
   const caminhoRows = vis.filter(d => d.status === 'A caminho').sort((a,b)=>(parseDateBR(a.etaDest)||'').localeCompare(parseDateBR(b.etaDest)||''));
   const pendRows    = vis.filter(d => d.status === 'Descarregando').sort((a,b)=>(b.esperaMin||0)-(a.esperaMin||0));
   const ordD = { vermelho:0, cinza:1, verde:2 };
-  const descRows    = vis.filter(d => d.status === 'Descarregado').sort((a,b)=>(ordD[a.classe]-ordD[b.classe]) || ((parseDateBR(b.chegada)||'').localeCompare(parseDateBR(a.chegada)||'')));
+  const temFim = d => !!parseDateBR(d.fimDescarga);
+  const descRows    = vis.filter(d => d.status === 'Descarregado' && temFim(d)).sort((a,b)=>(ordD[a.classe]-ordD[b.classe]) || ((parseDateBR(b.chegada)||'').localeCompare(parseDateBR(a.chegada)||'')));
+  const semFimRows  = vis.filter(d => d.status === 'Descarregado' && !temFim(d)).sort((a,b)=>(parseDateBR(b.chegada)||'').localeCompare(parseDateBR(a.chegada)||''));
   const fill = (id, rws, fn, cols, msg) => { const tb=$('#'+id); if(tb) tb.innerHTML = rws.length ? rws.map(fn).join('') : `<tr><td colspan="${cols}"><div class="empty-state">${msg}</div></td></tr>`; };
   const cnt = (id,n) => { const e=$('#'+id); if(e) e.textContent = n; };
   const pk = d => d.pacotes != null ? Number(d.pacotes).toLocaleString('pt-BR') : '—';
@@ -2893,6 +2896,12 @@ function renderDescarga(){
       <td>${fmtHora(d.chegada)}</td><td>${fmtHora(d.fimDescarga)}</td><td>${fmtDateTime(d.deadline)||'—'}</td><td class="num">${fmtDelta(d.deltaMin)}</td><td class="num">${pk(d)}</td><td>${classeBadge(d.classe, d.resultado||d.status)}</td>
     </tr>`, 9, 'Nenhuma descarga concluída no período.');
   cnt('desc-desc-cnt', descRows.length);
+  fill('desc-semfim-tbody', semFimRows, d => `
+    <tr data-proto="${escapeHtml(String(d.protocolo||''))}" style="cursor:pointer">
+      <td>${escapeHtml(String(d.protocolo||''))}</td><td>${escapeHtml(String(d.servico||''))}</td><td>${escapeHtml(String(d.destino||'—'))}</td>
+      <td>${fmtHora(d.chegada)}</td><td>${fmtDateTime(d.deadline)||'—'}</td><td class="num">${pk(d)}</td><td>${classeBadge('cinza','Sem horário de fim')}</td>
+    </tr>`, 7, 'Todas as descargas têm horário de fim. 👍');
+  cnt('desc-semfim-cnt', semFimRows.length);
   const total=$('#desc-count'); if(total) total.textContent = vis.length;
 }
 function bindDescarga(){
