@@ -107,7 +107,7 @@
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(22,163,74,0.45); } 70% { box-shadow: 0 0 0 6px rgba(22,163,74,0); } 100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); } }
   #refreshBtn { background: var(--yellow); border:none; color:#5d4a00; font-weight:800; font-size:12px; padding:9px 16px; border-radius: 8px; cursor:pointer; transition: transform .15s ease, box-shadow .15s ease; white-space:nowrap; }
   #refreshBtn:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(255,204,0,0.35); }
-  main { padding: 24px 28px 60px; max-width: 1620px; width:100%; margin: 0 auto; }
+  main { padding: 24px 32px 60px; max-width: 2200px; width:100%; margin: 0 auto; }
 
   /* ===== KPI ROW ===== */
   .kpi-row { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 22px; }
@@ -1235,6 +1235,13 @@
               <button class="rel-op-btn active" data-op="linehaul">Line Haul</button>
               <button class="rel-op-btn" data-op="xpt">XPT</button>
               <button class="rel-op-btn" data-op="reversa">Reversa</button>
+            </div>
+          </div>
+          <div class="rel-sw-group">
+            <span class="rel-sw-lbl">Fase</span>
+            <div class="rel-op-switch" id="rel-fase-switch">
+              <button class="rel-fase-btn active" data-fase="etd">ETD · viagem</button>
+              <button class="rel-fase-btn" data-fase="eta">ETA · chegada</button>
             </div>
           </div>
         </div>

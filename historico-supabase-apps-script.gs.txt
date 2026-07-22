@@ -23,6 +23,11 @@
 var SUPA_URL = 'https://dvbezzmfnvbpumnwrqhj.supabase.co';
 var SUPA_SERVICE_KEY = 'COLE_AQUI_SUA_CHAVE_service_role';   // <-- secret, só aqui
 var NOME_ABA_BASE = 'Base';
+// Aba de ocorrências (motivo lançado em sistema) — a ocorrência mora aqui, não na Base.
+// Sem isso o histórico fica sem ocorrência (o calendário/Relatórios mostram "sem ocorrência").
+// >>> Confira o NOME da aba e as colunas: A(1)=Protocolo, O(15)=Ocorrência. Ajuste se diferente.
+var NOME_ABA_OCOR = 'Ocorrências';
+var C_OCOR = { protocolo: 1, ocorrencia: 15 };
 
 // Colunas da Base (1-indexado). Horários: Origem ETA=P(16) deveria chegar,
 // Origem ATA=Q(17) chegou, Origem ETD=S(19) deveria sair, Origem ATD=T(20) saiu.
@@ -39,6 +44,18 @@ function enviarHistoricoSupabase() {
   if (!base) { ss.toast('Aba "' + NOME_ABA_BASE + '" não encontrada.', 'Falhou', 8); return; }
   var dados = base.getDataRange().getValues();
   var mapa = {};
+
+  // Ocorrência por protocolo (aba Ocorrências). Vira a causa_raiz no histórico.
+  var ocorPorProto = {};
+  var abaOcor = ss.getSheetByName(NOME_ABA_OCOR);
+  if (abaOcor) {
+    var dOcor = abaOcor.getDataRange().getValues();
+    for (var k = 1; k < dOcor.length; k++) {
+      var pk = String(dOcor[k][C_OCOR.protocolo - 1] || '').trim();
+      var oc = String(dOcor[k][C_OCOR.ocorrencia - 1] || '').trim();
+      if (pk && oc) ocorPorProto[pk] = oc;
+    }
+  }
 
   for (var i = 1; i < dados.length; i++) {
     var r = dados[i];
@@ -66,7 +83,7 @@ function enviarHistoricoSupabase() {
         resultado: txt(r[C.substatus - 1]),
         pacotes: paraInt(r[C.pacotes - 1]),
         motivo_cancelamento: txt(r[C.motivoCancel - 1]),
-        causa_raiz: txt(r[C.causaRaiz - 1]),
+        causa_raiz: ocorPorProto[idBase] || txt(r[C.causaRaiz - 1]),   // ocorrência (aba) tem prioridade; senão causa raiz da Base
         pre_check_origem: txt(r[C.preCheckOrigem - 1]),
         pre_check_destino: txt(r[C.preCheckDestino - 1]),
         destino_eta: txt(r[C.destinoETA - 1]),
