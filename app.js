@@ -2046,9 +2046,11 @@ function relAtrasoItem(r){
   const tag = isRost ? 'Protocolo' : 'Travel ID';
   const trecho = (r.origem || r.destino) ? `${r.origem||'?'} → ${r.destino||'?'}` : ((r.trecho||'').trim() || '—');
   const oc = relJustificativa(r) || 'Sem ocorrência registrada';
+  const etaDest = parseDateBR(r.destino_eta);
+  const etaTxt = etaDest ? ` · <b>ETA destino</b> ${escapeHtml(fmtDateTime(etaDest))}` : '';
   return `<div class="dt-atr">
     <div class="dt-atr-top"><span class="mono">${escapeHtml(id)}</span> <span class="id-tag ${isRost?'id-proto':'id-travel'}">${tag}</span>
-      <span class="dt-atr-nom">${escapeHtml(r.servico||'')}</span></div>
+      <span class="dt-atr-nom">${escapeHtml(r.servico||'')}${etaTxt}</span></div>
     <div class="dt-atr-tr">${escapeHtml(trecho)}</div>
     <div class="dt-atr-oc">${escapeHtml(oc)}</div>
   </div>`;
@@ -2071,10 +2073,19 @@ async function renderRelCalendar(){
   const mStart = `${_calY}-${mm}-01`, mEnd = `${_calY}-${mm}-${String(lastDay).padStart(2,'0')}`;
   const navBar = `<div class="cal-head"><button class="cal-nav" data-cal="prev" type="button">‹</button><div class="cal-title">${MES_NOME[_calM]} ${_calY}</div><button class="cal-nav" data-cal="next" type="button">›</button></div>`;
   host.innerHTML = navBar + `<div class="cal-loading">Carregando…</div>`;
-  const res = await fetchHistorico(mStart, mEnd);
+  // alarga o início da busca: viagens que saíram dias antes mas CHEGARAM neste mês entram no dia da chegada
+  const ws = new Date(_calY, _calM, 1); ws.setDate(ws.getDate() - 12);
+  const wStart = `${ws.getFullYear()}-${String(ws.getMonth()+1).padStart(2,'0')}-${String(ws.getDate()).padStart(2,'0')}`;
+  const res = await fetchHistorico(wStart, mEnd);
   const atras = (res.ok ? res.rows : []).filter(r => /finaliz/i.test(r.estado||'') && /atrasad/i.test(r.resultado||'') && relTipoMatch(r) && relFaseMatch(r));
   const byDay = {};
-  atras.forEach(r => { const d = r.data; if(!d) return; (byDay[d] = byDay[d] || []).push(r); });
+  const prefMes = `${_calY}-${mm}`;
+  atras.forEach(r => {
+    let d = String(r.chegada||'').slice(0,10);        // agrupa pela CHEGADA (dia em que o atraso se materializou), não pela data da viagem
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) d = r.data;     // fallback: data da viagem
+    if(!d || d.slice(0,7) !== prefMes) return;         // só dias do mês exibido no calendário
+    (byDay[d] = byDay[d] || []).push(r);
+  });
   _calData = { byDay };
   let max = 0; Object.values(byDay).forEach(a => { if(a.length > max) max = a.length; });
   const first = new Date(_calY, _calM, 1).getDay();
