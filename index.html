@@ -1079,6 +1079,11 @@
 
       <!-- ===================== XPT ===================== -->
       <section id="view-xpt" style="display:none;">
+        <div class="ops-ribbon" id="ribbon-xpt">
+          <div class="ops-left"><div class="ops-eyebrow">Status da operação · Checkpoint CPT (XPT)</div><div class="ops-headline" id="xpt-ops-headline">—</div></div>
+          <div class="ops-stats" id="xpt-ops-stats"></div>
+          <div class="ops-bar" id="xpt-ops-bar"></div>
+        </div>
         <div class="kpi-row">
           <div class="kpi-card k-total"><div class="kpi-label">Total checkpoints</div><div class="kpi-value tabular" id="xpt-kpi-total">0</div><div class="kpi-sub">Acompanhamento de bipagem CPT</div></div>
           <div class="kpi-card k-green"><div class="kpi-label">Bipagem no prazo</div><div class="kpi-value tabular" id="xpt-kpi-bip">0</div><div class="kpi-sub">bipou até o CPT previsto</div></div>
@@ -1099,6 +1104,11 @@
 
       <!-- ===================== PORTAL ===================== -->
       <section id="view-validacao" style="display:none;">
+        <div class="ops-ribbon" id="ribbon-validacao">
+          <div class="ops-left"><div class="ops-eyebrow">Status da operação · Auditoria do portal</div><div class="ops-headline" id="validacao-ops-headline">—</div></div>
+          <div class="ops-stats" id="validacao-ops-stats"></div>
+          <div class="ops-bar" id="validacao-ops-bar"></div>
+        </div>
         <div class="kpi-row">
           <div class="kpi-card k-total clickable" data-valkpi="all"><div class="kpi-label">Total de rotas</div><div class="kpi-value tabular" id="val-kpi-total">0</div><div class="kpi-sub">Auditadas no portal · clique p/ ver todas</div></div>
           <div class="kpi-card k-green clickable" data-valkpi="corretos"><div class="kpi-label">Dados corretos</div><div class="kpi-value tabular" id="val-kpi-ok">0</div><div class="kpi-sub">Sem divergência nem recusa</div></div>
@@ -1193,6 +1203,11 @@
       </section>
 
       <section id="view-gestao" style="display:none;">
+        <div class="ops-ribbon" id="ribbon-gestao">
+          <div class="ops-left"><div class="ops-eyebrow">Status da operação · Plantão</div><div class="ops-headline" id="gestao-ops-headline">—</div></div>
+          <div class="ops-stats" id="gestao-ops-stats"></div>
+          <div class="ops-bar" id="gestao-ops-bar"></div>
+        </div>
         <div class="panel" style="margin-bottom:18px">
           <h3>🕓 Veículos que ainda não biparam no ETA <span class="hint"><b id="gx-eta-cnt">0</b> · aguardando chegada na origem · clique numa rota pro detalhe</span></h3>
           <div class="gx-filters"><input type="text" class="gx-search" data-gx="gx-eta" placeholder="Buscar protocolo, rota, placa, destino…"><select class="gx-dest" data-gx="gx-eta"><option value="">Todos os destinos</option></select><button class="chip-export gx-export" data-gx="gx-eta"><i class="ico-dl"></i> Exportar</button></div>
@@ -1387,7 +1402,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=50"></script>
+<script src="app.js?v=51"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">

@@ -909,6 +909,11 @@ function renderXptTable(){
   $('#xpt-kpi-bip').textContent = rows.filter(xptBipOk).length;
   $('#xpt-kpi-fin').textContent = rows.filter(d=>/finaliz/i.test(d.status)).length;
   $('#xpt-kpi-doc').textContent = rows.filter(docPend).length;
+  const _xTot=rows.length, _xBip=rows.filter(xptBipOk).length, _xDoc=rows.filter(docPend).length;
+  setRibbon('xpt', _xDoc>0?'vermelho':(_xBip<_xTot?'amarelo':'verde'),
+    _xDoc>0?`<span class="hl-strong">${_xDoc}</span> com DOC pendente`:(_xTot?'Checkpoints em dia':'Sem checkpoints'),
+    segBar([{n:_xBip,color:'var(--green)'},{n:_xTot-_xBip,color:'var(--grey)'}]),
+    statItem('var(--green)','Bipou no prazo',_xBip)+statItem('var(--red)','DOC pendente',_xDoc)+statItem('var(--grey)','Total',_xTot));
   const cnt = $('#xpt-count'); if(cnt) cnt.textContent = rows.length;
   const tb = $('#xpt-tbody');
   if(tb) tb.innerHTML = rows.length ? rows.map(d=>{
@@ -944,6 +949,10 @@ function renderValTable(){
   $('#val-kpi-ok').textContent    = corretos.length;
   $('#val-kpi-div').textContent   = divs.length;
   const rec = $('#val-kpi-rec'); if(rec) rec.textContent = recs.length;
+  setRibbon('validacao', recs.length?'vermelho':(divs.length?'amarelo':'verde'),
+    recs.length?`<span class="hl-strong">${recs.length}</span> recusada${recs.length>1?'s':''}`:(divs.length?`<span class="hl-strong">${divs.length}</span> divergência${divs.length>1?'s':''}`:'Portal sem pendências'),
+    segBar([{n:corretos.length,color:'var(--green)'},{n:divs.length,color:'var(--amber)'},{n:recs.length,color:'var(--red)'}]),
+    statItem('var(--green)','Corretos',corretos.length)+statItem('var(--amber)','Divergências',divs.length)+statItem('var(--red)','Recusados',recs.length));
   // card ativo
   $$('#view-validacao .kpi-card[data-valkpi]').forEach(c => c.classList.toggle('active', c.dataset.valkpi === _valFilter));
   let rows = all;
@@ -1424,6 +1433,11 @@ function renderGestao(){
     ['var(--grey)','Aguardando bipagem · ETA', naoBipou.length, 'eta'],
     ['var(--green)','Em viagem (prioritárias)', etd.length, 'etd-todos'],
   ].map(([c,l,v,jump])=>`<div class="ca-row gx-jump" data-jump="${jump}"><span class="ca-dot" style="background:${c}"></span><div style="flex:1">${l}</div><b style="font-family:var(--font-num)">${v}</b><span class="gx-arrow">›</span></div>`).join('');
+  const _gVerde = etd.filter(d=>d.risco==='verde').length;
+  setRibbon('gestao', (atraso>0||parados>0)?'vermelho':(risco>0?'amarelo':'verde'),
+    (atraso+parados)>0?`<span class="hl-strong">${atraso+parados}</span> exigindo atenção agora`:(risco>0?`<span class="hl-strong">${risco}</span> em risco`:'Operação sob controle'),
+    segBar([{n:_gVerde,color:'var(--green)'},{n:risco,color:'var(--amber)'},{n:atraso,color:'var(--red)'}]),
+    statItem('var(--red)','Possível atraso',atraso)+statItem('var(--amber)','Em risco',risco)+statItem('var(--amber)','Parados',parados)+statItem('var(--grey)','Aguard. ETA',naoBipou.length));
   const riscoAtencao = etd.filter(d => d.risco==='vermelho' || d.risco==='amarelo').sort((a,b)=> ((b.risco==='vermelho'?1:0) - (a.risco==='vermelho'?1:0)) || ((b.kmMedio||0)-(a.kmMedio||0)));
   _gxDestFill('gx-risco', riscoAtencao); _gxFill('gx-risco', _gxRows('gx-risco', riscoAtencao), _gxEtdRowFaixa, 11);
   const noPrazo = etd.filter(d => d.risco==='verde' && d.origemATD && String(d.origemATD).trim()).sort((a,b)=>(a.kmMedio||0)-(b.kmMedio||0));  // só rotas que JÁ saíram da origem
