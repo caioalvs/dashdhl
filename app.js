@@ -166,7 +166,8 @@ function msCountBadge(tab,key){
   return n ? `<span class="ms-count">${n}</span>` : `<span class="ms-cap" style="font-weight:700">Todos</span>`;
 }
 function closeAllMs(except){ $$('.ms.open').forEach(m => { if(m!==except) m.classList.remove('open'); }); }
-document.addEventListener('click', () => closeAllMs(null));
+// fecha só quando o clique é FORA de qualquer multi-select (clicar dentro não fecha — dá pra marcar vários)
+document.addEventListener('click', (e) => { if(!e.target.closest('.ms')) closeAllMs(null); });
 
 // chamado quando qualquer filtro muda → re-render da aba + sincroniza KPIs/badges
 function onFilterChange(tab){
@@ -176,12 +177,17 @@ function onFilterChange(tab){
 // re-renderiza os multi-selects daquela aba (atualiza contadores) e os KPIs ativos
 function syncFilterUI(tab){
   $$(`.ms[data-tab="${tab}"]`).forEach(c => {
-    const wasOpen = c.classList.contains('open');
-    rebuildMs(c);
-    if(wasOpen) c.classList.add('open');
+    if(c.classList.contains('open')) refreshMsBadge(c);   // aberto: só atualiza o contador (não reconstrói → sem flicker, mantém aberto)
+    else rebuildMs(c);
   });
   syncKpiActive(tab);
   saveView();
+}
+// atualiza só o botão do multi-select (legenda + contador), preservando a lista aberta e o estado dos checkboxes
+function refreshMsBadge(container){
+  const tab = container.dataset.tab, key = container.dataset.key, cap = container.dataset.cap;
+  const btn = container.querySelector('.ms-btn'); if(!btn) return;
+  btn.innerHTML = `<span class="ms-cap">${escapeHtml(cap)}</span>${msCountBadge(tab,key)}<span class="ms-caret">▾</span>`;
 }
 function rebuildMs(container){
   const tab = container.dataset.tab, key = container.dataset.key;
@@ -1343,7 +1349,21 @@ function gestaoJump(jump){
   }
 }
 const _gxSearch = { 'gx-eta':'', 'gx-risco':'', 'gx-ok':'', 'gx-posto':'' };
+const _gxDest   = { 'gx-eta':'', 'gx-risco':'', 'gx-ok':'', 'gx-posto':'' };
 function _gxMatch(d, term){ if(!term) return true; const t=String(term).toLowerCase(); return [d.protocolo,d.rota,d.placa,d.origem,d.destino,d.statusSM,d.riscoTexto].some(x=>String(x||'').toLowerCase().includes(t)); }
+// aplica busca textual + filtro de destino
+function _gxRows(key, rows){
+  const dest = _gxDest[key];
+  return rows.filter(d => _gxMatch(d, _gxSearch[key]) && (!dest || String(d.destino||'').trim() === dest));
+}
+// popula o <select> de destino daquela tabela com os destinos existentes nas linhas-fonte
+function _gxDestFill(key, rows){
+  const sel = document.querySelector(`.gx-dest[data-gx="${key}"]`); if(!sel) return;
+  const dests = uniqueSorted(rows.map(d => String(d.destino||'').trim()).filter(Boolean));
+  if(_gxDest[key] && !dests.includes(_gxDest[key])) _gxDest[key] = '';   // destino selecionado saiu da lista
+  const cur = _gxDest[key];
+  sel.innerHTML = `<option value="">Todos os destinos</option>` + dests.map(x => `<option value="${escapeHtml(x)}"${x===cur?' selected':''}>${escapeHtml(x)}</option>`).join('');
+}
 function _gxFill(key, rows, rowFn, colspan){
   const cnt=$('#'+key+'-cnt'); if(cnt) cnt.textContent=rows.length;
   const tb=$('#'+key+'-tbody'); if(!tb) return;
@@ -1357,8 +1377,12 @@ function _gxFaixa(d){
   const txt = d.parado ? 'Parado' : (d.riscoTexto||'—');
   return `<span class="badge ${cls}"><span class="badge-dot"></span>${escapeHtml(txt)}</span>`;
 }
+function _gxOcorCell(d){
+  const oc = (d.ocorrencia && String(d.ocorrencia).trim()) || (d.causaRaiz && String(d.causaRaiz).trim()) || '';
+  return oc ? `<span class="ocor-info">${escapeHtml(oc)}</span>` : '<span class="ocor-empty">—</span>';
+}
 function _gxEtdRowFaixa(d){
-  return `<tr class="${d.risco==='vermelho'?'crit':''}" data-proto="${escapeHtml(d.protocolo)}" style="cursor:pointer">${protoTd(d.protocolo)}<td class="mono">${escapeHtml(d.rota||'—')}</td><td class="mono">${escapeHtml(d.placa||'—')}</td><td>${escapeHtml(d.destino||'—')}</td><td>${fmtDateTime(d.etaDestino)}</td><td>${progressCell(d)}</td><td class="num">${d.kmFaltante!=null?d.kmFaltante+' km':'—'}</td><td class="num"><b>${d.kmMedio!=null?d.kmMedio+' km/h':'—'}</b></td><td>${escapeHtml(d.statusSM||'—')}</td><td>${_gxFaixa(d)}</td></tr>`;
+  return `<tr class="${d.risco==='vermelho'?'crit':''}" data-proto="${escapeHtml(d.protocolo)}" style="cursor:pointer">${protoTd(d.protocolo)}<td class="mono">${escapeHtml(d.rota||'—')}</td><td class="mono">${escapeHtml(d.placa||'—')}</td><td>${escapeHtml(d.destino||'—')}</td><td>${fmtDateTime(d.etaDestino)}</td><td>${progressCell(d)}</td><td class="num">${d.kmFaltante!=null?d.kmFaltante+' km':'—'}</td><td class="num"><b>${d.kmMedio!=null?d.kmMedio+' km/h':'—'}</b></td><td>${escapeHtml(d.statusSM||'—')}</td><td>${_gxFaixa(d)}</td><td>${_gxOcorCell(d)}</td></tr>`;
 }
 function _gxEtdRow(d){
   return `<tr data-proto="${escapeHtml(d.protocolo)}" style="cursor:pointer">${protoTd(d.protocolo)}<td class="mono">${escapeHtml(d.rota||'—')}</td><td class="mono">${escapeHtml(d.placa||'—')}</td><td>${escapeHtml(d.destino||'—')}</td><td>${fmtDateTime(d.etaDestino)}</td><td>${progressCell(d)}</td><td class="num">${d.kmFaltante!=null?d.kmFaltante+' km':'—'}</td><td class="num"><b>${d.kmMedio!=null?d.kmMedio+' km/h':'—'}</b></td><td>${escapeHtml(d.statusSM||'—')}</td></tr>`;
@@ -1371,7 +1395,7 @@ function renderGestao(){
   const etd = etdAll.filter(d => !d.finalizada && !d.naoPrioritaria && !d.naoIniciada && !d.divergenciaSM);
   const eta = (DASHBOARD_DATA.eta || []).filter(d => !d.ehXpt);
   const naoBipou = eta.filter(d => d.classificacao === 'cinza').sort((a,b)=> (a.horarioMax?+new Date(a.horarioMax):9e15) - (b.horarioMax?+new Date(b.horarioMax):9e15));
-  _gxFill('gx-eta', naoBipou.filter(d=>_gxMatch(d,_gxSearch['gx-eta'])), _gxEtaRow, 7);
+  _gxDestFill('gx-eta', naoBipou); _gxFill('gx-eta', _gxRows('gx-eta', naoBipou), _gxEtaRow, 7);
   const parados = etd.filter(d=>d.parado).length;
   const risco   = etd.filter(d=>d.risco==='amarelo').length;
   const atraso  = etd.filter(d=>d.risco==='vermelho').length;
@@ -1386,11 +1410,11 @@ function renderGestao(){
     ['var(--green)','Em viagem (prioritárias)', etd.length, 'etd-todos'],
   ].map(([c,l,v,jump])=>`<div class="ca-row gx-jump" data-jump="${jump}"><span class="ca-dot" style="background:${c}"></span><div style="flex:1">${l}</div><b style="font-family:var(--font-num)">${v}</b><span class="gx-arrow">›</span></div>`).join('');
   const riscoAtencao = etd.filter(d => d.risco==='vermelho' || d.risco==='amarelo').sort((a,b)=> ((b.risco==='vermelho'?1:0) - (a.risco==='vermelho'?1:0)) || ((b.kmMedio||0)-(a.kmMedio||0)));
-  _gxFill('gx-risco', riscoAtencao.filter(d=>_gxMatch(d,_gxSearch['gx-risco'])), _gxEtdRowFaixa, 10);
-  const noPrazo = etd.filter(d => d.risco==='verde').sort((a,b)=>(a.kmMedio||0)-(b.kmMedio||0));
-  _gxFill('gx-ok', noPrazo.filter(d=>_gxMatch(d,_gxSearch['gx-ok'])), _gxEtdRow, 9);
+  _gxDestFill('gx-risco', riscoAtencao); _gxFill('gx-risco', _gxRows('gx-risco', riscoAtencao), _gxEtdRowFaixa, 11);
+  const noPrazo = etd.filter(d => d.risco==='verde' && d.origemATD && String(d.origemATD).trim()).sort((a,b)=>(a.kmMedio||0)-(b.kmMedio||0));  // só rotas que JÁ saíram da origem
+  _gxDestFill('gx-ok', noPrazo); _gxFill('gx-ok', _gxRows('gx-ok', noPrazo), _gxEtdRow, 9);
   const posto = etdAll.filter(d => d.postoFiscal && !d.naoIniciada).sort((a,b)=>(a.postoKm==null?1e9:a.postoKm)-(b.postoKm==null?1e9:b.postoKm));
-  _gxFill('gx-posto', posto.filter(d=>_gxMatch(d,_gxSearch['gx-posto'])), _gxPostoRow, 10);
+  _gxDestFill('gx-posto', posto); _gxFill('gx-posto', _gxRows('gx-posto', posto), _gxPostoRow, 10);
 }
 function renderOfensores(){
   const all = buildOfensores();
@@ -3297,6 +3321,7 @@ async function boot(){
   { const xs = $('#f-xpt-search'); if(xs) xs.addEventListener('input', () => { _xptSearch = xs.value; renderXptTable(); }); }
   startHealthMonitor();
   document.querySelectorAll('.gx-search').forEach(inp => inp.addEventListener('input', () => { _gxSearch[inp.dataset.gx] = inp.value; renderGestao(); }));
+  document.querySelectorAll('.gx-dest').forEach(sel => sel.addEventListener('change', () => { _gxDest[sel.dataset.gx] = sel.value; renderGestao(); }));
   const savedTab = restoreView();   // recupera filtros + aba ativa salvos
 
   // Aviso: aberto como arquivo (file://) bloqueia o fetch dos CSVs do Google
