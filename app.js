@@ -888,12 +888,22 @@ function fillEtdNaoPrio(rows){
     </tr>`).join('');
 }
 
-let _xptSearch = '';
+let _xptSearch = '', _xptStatus = '', _xptLast = [];
+// popula um <select> com os valores + opção "Todos" (reutilizável nas abas)
+function _fillSelect(sel, values, cur, allLabel){
+  const el = document.querySelector(sel); if(!el) return;
+  el.innerHTML = `<option value="">${allLabel||'Todos'}</option>` + values.map(v => `<option value="${escapeHtml(v)}"${v===cur?' selected':''}>${escapeHtml(v)}</option>`).join('');
+}
 function xptBipOk(d){ return d.bipagemCPT && d.etaOrigem && new Date(d.bipagemCPT) <= new Date(d.etaOrigem); }
 function renderXptTable(){
   let rows = DASHBOARD_DATA.xpt;
+  const stats = uniqueSorted((DASHBOARD_DATA.xpt||[]).map(d=>String(d.status||'').trim()).filter(Boolean));
+  if(_xptStatus && !stats.includes(_xptStatus)) _xptStatus = '';
+  _fillSelect('#xpt-status', stats, _xptStatus, 'Todos os status');
   const q = _xptSearch.trim().toLowerCase();
   if(q) rows = rows.filter(d => `${d.protocolo} ${d.rota} ${d.placa} ${d.motorista}`.toLowerCase().includes(q));
+  if(_xptStatus) rows = rows.filter(d => String(d.status||'').trim() === _xptStatus);
+  _xptLast = rows;
   const docPend = d => !/enviad|ok|conclu/i.test(d.doc||'');
   $('#xpt-kpi-total').textContent = rows.length;
   $('#xpt-kpi-bip').textContent = rows.filter(xptBipOk).length;
@@ -922,7 +932,7 @@ function renderXptTable(){
   }).join('') : `<tr><td colspan="11"><div class="empty-state">Nenhum checkpoint corresponde à busca.</div></td></tr>`;
 }
 
-let _valFilter = 'all';
+let _valFilter = 'all', _valSearch = '', _valLast = [];
 const valIsRec = d => /recus/i.test(d.statusPortal||'');
 const valHasDiv = d => (d.divergencia||'').trim() !== '';
 function renderValTable(){
@@ -940,6 +950,9 @@ function renderValTable(){
   if(_valFilter === 'corretos') rows = corretos;
   else if(_valFilter === 'div') rows = divs;
   else if(_valFilter === 'recusado') rows = recs;
+  const q = _valSearch.trim().toLowerCase();
+  if(q) rows = rows.filter(d => `${d.protocolo} ${d.servico} ${d.placas} ${d.statusPortal} ${d.divergencia}`.toLowerCase().includes(q));
+  _valLast = rows;
   const cnt = $('#val-count'); if(cnt) cnt.textContent = rows.length;
   $('#val-tbody').innerHTML = rows.length ? rows.map(d=>{
     const temDiv = valHasDiv(d), recusado = valIsRec(d);
@@ -1350,6 +1363,7 @@ function gestaoJump(jump){
 }
 const _gxSearch = { 'gx-eta':'', 'gx-risco':'', 'gx-ok':'', 'gx-posto':'' };
 const _gxDest   = { 'gx-eta':'', 'gx-risco':'', 'gx-ok':'', 'gx-posto':'' };
+const _gxLast   = {};   // últimas linhas filtradas de cada tabela (pro export)
 function _gxMatch(d, term){ if(!term) return true; const t=String(term).toLowerCase(); return [d.protocolo,d.rota,d.placa,d.origem,d.destino,d.statusSM,d.riscoTexto].some(x=>String(x||'').toLowerCase().includes(t)); }
 // aplica busca textual + filtro de destino
 function _gxRows(key, rows){
@@ -1365,6 +1379,7 @@ function _gxDestFill(key, rows){
   sel.innerHTML = `<option value="">Todos os destinos</option>` + dests.map(x => `<option value="${escapeHtml(x)}"${x===cur?' selected':''}>${escapeHtml(x)}</option>`).join('');
 }
 function _gxFill(key, rows, rowFn, colspan){
+  _gxLast[key] = rows;
   const cnt=$('#'+key+'-cnt'); if(cnt) cnt.textContent=rows.length;
   const tb=$('#'+key+'-tbody'); if(!tb) return;
   tb.innerHTML = rows.length ? rows.map(rowFn).join('') : `<tr><td colspan="${colspan}"><div class="empty-state">Nada por aqui. 👍</div></td></tr>`;
@@ -3304,6 +3319,18 @@ async function boot(){
   bindDescarga();
   bindValidacao();
   { const xs = $('#f-xpt-search'); if(xs) xs.addEventListener('input', () => { _xptSearch = xs.value; renderXptTable(); }); }
+  { const xst = $('#xpt-status'); if(xst) xst.addEventListener('change', () => { _xptStatus = xst.value; renderXptTable(); }); }
+  { const xe = $('#xpt-export'); if(xe) xe.addEventListener('click', () => {
+      const cols = [{label:'Protocolo',get:d=>d.protocolo},{label:'Nomenclatura',get:d=>d.rota},{label:'Motorista',get:d=>d.motorista},{label:'Placa',get:d=>d.placa},{label:'CPT previsto',get:d=>fmtDateTime(d.etaOrigem)},{label:'Bipagem CPT',get:d=>fmtDateTime(d.bipagemCPT)},{label:'Status',get:d=>d.status},{label:'Pacotes',get:d=>d.pacotes},{label:'DOC',get:d=>d.doc},{label:'Performance',get:d=>d.performance},{label:'Pontuação',get:d=>d.pontuacao}];
+      downloadCsv('xpt.csv', toCsv(cols, _xptLast)); }); }
+  { const vs = $('#f-val-search'); if(vs) vs.addEventListener('input', () => { _valSearch = vs.value; renderValTable(); }); }
+  { const ve = $('#val-export'); if(ve) ve.addEventListener('click', () => {
+      const cols = [{label:'Protocolo',get:d=>d.protocolo},{label:'Serviço',get:d=>d.servico},{label:'Placas',get:d=>d.placas},{label:'Status portal',get:d=>d.statusPortal},{label:'Divergência',get:d=>d.divergencia}];
+      downloadCsv('portal.csv', toCsv(cols, _valLast)); }); }
+  document.querySelectorAll('.gx-export').forEach(btn => btn.addEventListener('click', () => {
+    const key = btn.dataset.gx, rows = _gxLast[key] || [];
+    const cols = [{label:'Protocolo',get:d=>d.protocolo},{label:'Nomenclatura',get:d=>d.rota},{label:'Placa',get:d=>d.placa},{label:'Origem',get:d=>d.origem},{label:'Destino',get:d=>d.destino},{label:'ETA destino',get:d=>fmtDateTime(d.etaDestino)},{label:'Horário máximo',get:d=>fmtDateTime(d.horarioMax)},{label:'Km faltante',get:d=>d.kmFaltante},{label:'Km/h médio',get:d=>d.kmMedio},{label:'Status SM',get:d=>d.statusSM},{label:'Situação',get:d=>d.riscoTexto||d.classificacaoTexto},{label:'Ocorrência',get:d=>d.ocorrencia||d.causaRaiz}];
+    downloadCsv(key+'.csv', toCsv(cols, rows)); }));
   startHealthMonitor();
   document.querySelectorAll('.gx-search').forEach(inp => inp.addEventListener('input', () => { _gxSearch[inp.dataset.gx] = inp.value; renderGestao(); }));
   document.querySelectorAll('.gx-dest').forEach(sel => sel.addEventListener('change', () => { _gxDest[sel.dataset.gx] = sel.value; renderGestao(); }));

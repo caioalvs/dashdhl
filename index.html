@@ -1087,6 +1087,8 @@
         </div>
         <div class="filter-bar">
           <input type="text" class="search" id="f-xpt-search" placeholder="Buscar protocolo, placa, motorista, rota...">
+          <select class="gx-dest" id="xpt-status"><option value="">Todos os status</option></select>
+          <button class="chip-export" id="xpt-export"><i class="ico-dl"></i> Exportar CSV</button>
           <div class="result-count"><b id="xpt-count">0</b> checkpoints</div>
         </div>
         <div class="table-wrap"><div class="table-scroll"><table>
@@ -1104,6 +1106,8 @@
           <div class="kpi-card k-red clickable" data-valkpi="recusado"><div class="kpi-label">Recusados</div><div class="kpi-value tabular" id="val-kpi-rec">0</div><div class="kpi-sub">Portal recusou a rota</div></div>
         </div>
         <div class="filter-bar">
+          <input type="text" class="search" id="f-val-search" placeholder="Buscar protocolo, serviço, placa, status...">
+          <button class="chip-export" id="val-export"><i class="ico-dl"></i> Exportar CSV</button>
           <div class="result-count"><b id="val-count">0</b> rotas</div>
         </div>
         <div class="table-wrap"><div class="table-scroll"><table>
@@ -1191,7 +1195,7 @@
       <section id="view-gestao" style="display:none;">
         <div class="panel" style="margin-bottom:18px">
           <h3>🕓 Veículos que ainda não biparam no ETA <span class="hint"><b id="gx-eta-cnt">0</b> · aguardando chegada na origem · clique numa rota pro detalhe</span></h3>
-          <div class="gx-filters"><input type="text" class="gx-search" data-gx="gx-eta" placeholder="Buscar protocolo, rota, placa, destino…"><select class="gx-dest" data-gx="gx-eta"><option value="">Todos os destinos</option></select></div>
+          <div class="gx-filters"><input type="text" class="gx-search" data-gx="gx-eta" placeholder="Buscar protocolo, rota, placa, destino…"><select class="gx-dest" data-gx="gx-eta"><option value="">Todos os destinos</option></select><button class="chip-export gx-export" data-gx="gx-eta"><i class="ico-dl"></i> Exportar</button></div>
           <div class="table-scroll short"><table>
             <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Origem</th><th>Destino</th><th>Horário máximo</th><th>Status</th></tr></thead>
             <tbody id="gx-eta-tbody"></tbody>
@@ -1203,7 +1207,7 @@
         </div>
         <div class="panel" style="margin-bottom:18px">
           <h3>⚠ Risco de atraso e atenção <span class="hint"><b id="gx-risco-cnt">0</b> · possível atraso + em risco (ETD) · clique numa rota</span></h3>
-          <div class="gx-filters"><input type="text" class="gx-search" data-gx="gx-risco" placeholder="Buscar protocolo, rota, placa, destino…"><select class="gx-dest" data-gx="gx-risco"><option value="">Todos os destinos</option></select></div>
+          <div class="gx-filters"><input type="text" class="gx-search" data-gx="gx-risco" placeholder="Buscar protocolo, rota, placa, destino…"><select class="gx-dest" data-gx="gx-risco"><option value="">Todos os destinos</option></select><button class="chip-export gx-export" data-gx="gx-risco"><i class="ico-dl"></i> Exportar</button></div>
           <div class="table-scroll short"><table>
             <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th class="num">Km faltante</th><th class="num">Km/h médio</th><th>Status SM</th><th>Faixa</th><th>Ocorrência</th></tr></thead>
             <tbody id="gx-risco-tbody"></tbody>
@@ -1211,7 +1215,7 @@
         </div>
         <div class="panel" style="margin-bottom:18px">
           <h3>✓ Rotas no prazo <span class="hint"><b id="gx-ok-cnt">0</b> · ETD dentro do previsto</span></h3>
-          <div class="gx-filters"><input type="text" class="gx-search" data-gx="gx-ok" placeholder="Buscar protocolo, rota, placa, destino…"><select class="gx-dest" data-gx="gx-ok"><option value="">Todos os destinos</option></select></div>
+          <div class="gx-filters"><input type="text" class="gx-search" data-gx="gx-ok" placeholder="Buscar protocolo, rota, placa, destino…"><select class="gx-dest" data-gx="gx-ok"><option value="">Todos os destinos</option></select><button class="chip-export gx-export" data-gx="gx-ok"><i class="ico-dl"></i> Exportar</button></div>
           <div class="table-scroll short"><table>
             <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th>Progresso</th><th class="num">Km faltante</th><th class="num">Km/h médio</th><th>Status SM</th></tr></thead>
             <tbody id="gx-ok-tbody"></tbody>
@@ -1219,7 +1223,7 @@
         </div>
         <div class="panel" style="margin-bottom:18px">
           <h3>🛃 Posto fiscal <span class="hint"><b id="gx-posto-cnt">0</b> · veículos com excepcionalidade a acompanhar</span></h3>
-          <div class="gx-filters"><input type="text" class="gx-search" data-gx="gx-posto" placeholder="Buscar protocolo, rota, placa, destino…"><label class="gx-dest-lbl">🎯 Foco no destino <select class="gx-dest" data-gx="gx-posto"><option value="">Todos</option></select></label></div>
+          <div class="gx-filters"><input type="text" class="gx-search" data-gx="gx-posto" placeholder="Buscar protocolo, rota, placa, destino…"><label class="gx-dest-lbl">🎯 Foco no destino <select class="gx-dest" data-gx="gx-posto"><option value="">Todos</option></select></label><button class="chip-export gx-export" data-gx="gx-posto"><i class="ico-dl"></i> Exportar</button></div>
           <div class="table-scroll short"><table>
             <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Progresso</th><th class="num">Km faltante</th><th class="num">Km/h médio</th><th>Situação</th><th class="num">Km até o posto</th><th>Status SM</th></tr></thead>
             <tbody id="gx-posto-tbody"></tbody>
@@ -1383,7 +1387,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=49"></script>
+<script src="app.js?v=50"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">
