@@ -183,11 +183,14 @@ function syncFilterUI(tab){
   syncKpiActive(tab);
   saveView();
 }
-// atualiza só o botão do multi-select (legenda + contador), preservando a lista aberta e o estado dos checkboxes
+// atualiza o botão do multi-select (legenda + contador) E sincroniza os checkboxes com a seleção
+// atual — sem reconstruir a lista (mantém aberto, sem flicker). Essencial p/ "Marcar todos"/"Limpar".
 function refreshMsBadge(container){
   const tab = container.dataset.tab, key = container.dataset.key, cap = container.dataset.cap;
   const btn = container.querySelector('.ms-btn'); if(!btn) return;
   btn.innerHTML = `<span class="ms-cap">${escapeHtml(cap)}</span>${msCountBadge(tab,key)}<span class="ms-caret">▾</span>`;
+  const arr = filters[tab][key] || [];
+  container.querySelectorAll('.ms-opt input').forEach(inp => { inp.checked = arr.includes(inp.value); });
 }
 function rebuildMs(container){
   const tab = container.dataset.tab, key = container.dataset.key;
