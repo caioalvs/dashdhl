@@ -928,7 +928,7 @@
         <div class="table-wrap">
           <div class="table-head-bar th-grey"><span class="dot"></span> Aguardando início — ainda não saíram da origem <span class="cnt"><b id="etd-cnt-aguard">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>CPT</th><th>Horário destino</th><th>Estado</th><th>Status SM</th><th>Ocorrência</th><th class="num">Pacotes</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>CPT</th><th>Horário destino</th><th>Estado</th><th>Status SM</th><th>SM</th><th>Parada</th><th>Ocorrência</th><th class="num">Pacotes</th></tr></thead>
             <tbody id="etd-tbody-aguard"></tbody>
           </table></div>
         </div>
@@ -946,7 +946,7 @@
         <div class="table-wrap">
           <div class="table-head-bar th-grey"><span class="dot"></span> Reversas — agrupadas à parte (com pacote no topo) <span class="cnt"><b id="etd-cnt-nao">0</b> rotas</span></div>
           <div class="table-scroll short"><table>
-            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th class="num">Km Faltante</th><th class="num">Desloc. 1h</th><th class="num">Velocidade</th><th>Status SM</th><th class="num">Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
+            <thead><tr><th>Identificação</th><th>Nomenclatura</th><th>Placa</th><th>Destino</th><th>Horário destino</th><th class="num">Km Faltante</th><th class="num">Desloc. 1h</th><th class="num">Velocidade</th><th>Status SM</th><th>SM</th><th>Parada</th><th class="num">Pacotes</th><th>Documentos</th><th>Ocorrência</th></tr></thead>
             <tbody id="etd-tbody-nao"></tbody>
           </table></div>
         </div>
@@ -1402,7 +1402,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=53"></script>
+<script src="app.js?v=54"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">

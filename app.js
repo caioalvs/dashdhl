@@ -730,7 +730,7 @@ function fillEtdAguardando(rows){
   const c = $('#etd-cnt-aguard'); if(c) c.textContent = rows.length;
   const tb = $('#etd-tbody-aguard'); if(!tb) return;
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="10"><div class="empty-state">Nenhuma rota aguardando início.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="12"><div class="empty-state">Nenhuma rota aguardando início.</div></td></tr>`;
     return;
   }
   // CPT estourado primeiro (o carro já deveria ter saído)
@@ -750,6 +750,8 @@ function fillEtdAguardando(rows){
       <td>${fmtDateTime(d.etaDestino)||'—'}</td>
       <td><span class="ocor-info">${escapeHtml(d.baseEstado||'Pendente')}</span></td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
+      <td class="mono">${escapeHtml(d.sm||'—')}</td>
+      ${paradaCell(d)}
       ${ocorCell(d)}
       <td class="num">${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
     </tr>`; }).join('');
@@ -879,7 +881,7 @@ function fillEtdNaoPrio(rows){
   $('#etd-cnt-nao').textContent = rows.length;
   const tb = $('#etd-tbody-nao');
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="12"><div class="empty-state">Nenhuma reversa no momento.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="14"><div class="empty-state">Nenhuma reversa no momento.</div></td></tr>`;
     return;
   }
   // reversas COM pacote primeiro (prioridade dentro do grupo), depois por qtd de pacotes
@@ -895,6 +897,8 @@ function fillEtdNaoPrio(rows){
       <td class="num">${d.deslocHora!=null ? d.deslocHora+' km' : '—'}</td>
       <td class="num">${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
+      <td class="mono">${escapeHtml(d.sm||'—')}</td>
+      ${paradaCell(d)}
       <td class="num">${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
       ${docCell(d)}
       ${ocorCell(d)}
