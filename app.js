@@ -805,7 +805,7 @@ function fillEtdTable(key, rows){
   $('#etd-cnt-'+key).textContent = rows.length;
   const tb = $('#etd-tbody-'+key);
   if(!rows.length){
-    tb.innerHTML = `<tr><td colspan="14"><div class="empty-state">Nenhuma rota nesta faixa.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="16"><div class="empty-state">Nenhuma rota nesta faixa.</div></td></tr>`;
     return;
   }
   // km/h negativo (cálculo estourou) no topo; depois já iniciados; depois maior km/h necessário
@@ -823,10 +823,20 @@ function fillEtdTable(key, rows){
       <td class="num">${d.deslocHora!=null ? d.deslocHora+' km' : '—'}</td>
       <td class="num">${d.velocidadeAtual!=null ? d.velocidadeAtual+' km/h' : '—'}</td>
       <td>${escapeHtml(d.statusSM||'—')}</td>
+      <td class="mono">${escapeHtml(d.sm||'—')}</td>
+      ${paradaCell(d)}
       <td class="num">${d.pacotes!=null ? d.pacotes.toLocaleString('pt-BR') : '—'}</td>
       ${docCell(d)}
       ${ocorCell(d)}
     </tr>`).join('');
+}
+// célula do horário de parado (coluna X) — destaca (âmbar) quando o veículo está parado
+function paradaCell(d){
+  const h = (d.paradaHora||'').trim();
+  if(!h) return '<td><span class="ocor-empty">—</span></td>';
+  return d.parado
+    ? `<td><span class="badge b-amarelo"><span class="badge-dot"></span>${escapeHtml(h)}</span></td>`
+    : `<td>${escapeHtml(h)}</td>`;
 }
 
 // célula de documentos (coluna W = DOCS): verde se enviado/ok, neutro caso contrário
@@ -1401,7 +1411,7 @@ function _gxEtaRow(d){
 }
 function _gxFaixa(d){
   const cls = d.risco==='vermelho'?'b-vermelho':(d.risco==='amarelo'?'b-amarelo':'b-verde');
-  const txt = d.parado ? 'Parado' : (d.riscoTexto||'—');
+  const txt = d.parado ? ('Parado' + (d.paradaHora ? ' · ' + d.paradaHora : '')) : (d.riscoTexto||'—');
   return `<span class="badge ${cls}"><span class="badge-dot"></span>${escapeHtml(txt)}</span>`;
 }
 function _gxOcorCell(d){
@@ -2517,7 +2527,9 @@ function openDetail(proto){
       + dtField('Km faltante', etd.kmFaltante!=null ? etd.kmFaltante+' km' : '')
       + dtField('Deslocamento na última hora', etd.deslocHora!=null ? etd.deslocHora+' km' : '')
       + dtField('Velocidade', etd.velocidadeAtual!=null ? etd.velocidadeAtual+' km/h' : '')
-      + dtField('Status SM', etd.statusSM)
+      + dtField('Status SM (GR)', etd.statusSM)
+      + (etd.sm ? dtField('SM', etd.sm) : '')
+      + (etd.paradaHora ? dtField('Parado desde', etd.paradaHora) : '')
       + dtField('Pacotes', etd.pacotes!=null ? etd.pacotes.toLocaleString('pt-BR') : '')
       + (etd.postoFiscal ? dtField('Posto fiscal', etd.postoSituacao + (etd.postoKm!=null?` · ${etd.postoKm} km`:'')) : '')
       + (etd.ocorrencia ? dtField('Ocorrência', etd.ocorrencia) : '');
@@ -3151,7 +3163,7 @@ function exportEtdCsv(){
     {label:'Protocolo', get:d=>d.protocolo}, {label:'Nomenclatura', get:d=>d.rota}, {label:'Placa', get:d=>d.placa},
     {label:'Destino', get:d=>d.destino}, {label:'ETA destino', get:d=>fmtDateTime(d.etaDestino)}, {label:'Km faltante', get:d=>d.kmFaltante},
     {label:'Km/h medio', get:d=>d.kmMedio}, {label:'Faixa', get:d=>d.riscoTexto}, {label:'Desloc 1h', get:d=>d.deslocHora},
-    {label:'Velocidade', get:d=>d.velocidadeAtual}, {label:'Status SM', get:d=>d.statusSM}, {label:'Posto fiscal', get:d=>d.postoSituacao},
+    {label:'Velocidade', get:d=>d.velocidadeAtual}, {label:'Status SM (GR)', get:d=>d.statusSM}, {label:'SM', get:d=>d.sm}, {label:'Parado desde', get:d=>d.paradaHora}, {label:'Posto fiscal', get:d=>d.postoSituacao},
     {label:'Ocorrencia', get:d=>d.ocorrencia}
   ];
   downloadCsv(`etd_${csvStamp()}.csv`, toCsv(cols, getEtdFiltered()));
@@ -3715,6 +3727,8 @@ function mapEtdRow(row){
     deslocHora: parseNum(cell(row,'R')),                                                      // R = km percorridos na última hora
     velocidadeAtual: (cell(row,'S') !== '' ? parseNum(cell(row,'S'))                          // S = velocidade atual
                                            : parseNum(pick(x, ['velocidade atual','velocidade','vel atual']))),
+    sm:         cell(row,'K') || pick(x, ['sm','numero sm','id sm']),   // K = número da SM
+    paradaHora: cell(row,'X'),   // X = horário do parado (auto-preenche)
     postoU:     cell(row,'U'),   // U = posto fiscal (acompanhamento)
     postoV:     cell(row,'V'),   // V = posto fiscal (acompanhamento)
     docs:       cell(row,'W'),   // W = DOCS (documentos)
