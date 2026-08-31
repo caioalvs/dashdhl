@@ -2766,6 +2766,11 @@ function renderWatch(){
 // anima os números dos KPIs (count-up) na carga e a cada atualização
 function animateNumbers(){
   if(typeof requestAnimationFrame === 'undefined') return;
+  // aba em segundo plano: o rAF fica suspenso e o KPI travaria no 1º frame (0). Mantém o valor final.
+  if(typeof document !== 'undefined' && document.hidden){
+    $$('.kpi-value').forEach(el => { const n=el.textContent.trim().match(/[\d.]+/); el.dataset.prev = n ? String(parseInt(n[0].replace(/\./g,''),10)) : ''; });
+    return;
+  }
   $$('.kpi-value').forEach(el => {
     const txt = el.textContent.trim();
     const num = txt.match(/[\d.]+/);
@@ -2777,12 +2782,15 @@ function animateNumbers(){
     el.dataset.prev = target;
     if(prev === target) return;
     const t0 = performance.now(), dur = 650;
+    // rede de segurança: se o rAF for suspenso no meio (troca de aba), garante o valor final
+    clearTimeout(el._animGuard);
+    el._animGuard = setTimeout(() => { el.textContent = txt; }, dur + 260);
     (function frame(now){
       const t = Math.min(1, (now - t0) / dur);
       const e = 1 - Math.pow(1 - t, 3);
       const v = Math.round(prev + (target - prev) * e);
       el.textContent = prefix + v.toLocaleString('pt-BR') + suffix;
-      if(t < 1) requestAnimationFrame(frame); else el.textContent = txt;
+      if(t < 1) requestAnimationFrame(frame); else { clearTimeout(el._animGuard); el.textContent = txt; }
     })(t0);
   });
 }
