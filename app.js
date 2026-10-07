@@ -3690,6 +3690,9 @@ function mapEtaRow(row){
     horarioReal: parseDateBR(cell(row,'G')),  // G = horário real da chegada
     segundaBipagem: cell(row,'H'),            // H = ETA 2ª perna (prazo da 2ª coleta; "NÃO" = rota de 1 coleta só)
     segundaBipagemReal: cell(row,'I'),        // I = Bipagem ETA 2ª perna (bipagem REAL da 2ª coleta; vazio/"NÃO" = ainda não bipou)
+    // M = TIPO DA ROTA (EXPRESSO, REV EXP, URBANO...). Lido por POSIÇÃO: a aba tem DUAS colunas
+    // chamadas "TIPO" (M = tipo da rota, AA = rastreamento) e o índice por nome pegava a errada.
+    tipoRota:    cell(row,'M') || pick(x, ['tipo rota','tipo de rota','tipo','modal']),
     statusK:     cell(row,'K'),               // K = status da rota
     statusL:     cell(row,'L'),               // L = status da rota
     statusViagem: cell(row,'U')               // U = status da viagem
@@ -3739,6 +3742,7 @@ function mapEtdRow(row){
     deslocHora: parseNum(cell(row,'R')),                                                      // R = km percorridos na última hora
     velocidadeAtual: (cell(row,'S') !== '' ? parseNum(cell(row,'S'))                          // S = velocidade atual
                                            : parseNum(pick(x, ['velocidade atual','velocidade','vel atual']))),
+    tipoRota:   cell(row,'J') || pick(x, ['tipo de rota','tipo rota','tipo','modal']),   // J = TIPO DE ROTA (cabeçalho mudou de "Tipo" p/ "TIPO DE ROTA")
     sm:         cell(row,'K') || pick(x, ['sm','numero sm','id sm']),   // K = número da SM
     paradaHora: cell(row,'X'),   // X = horário do parado (auto-preenche)
     postoU:     cell(row,'U'),   // U = posto fiscal (acompanhamento)
