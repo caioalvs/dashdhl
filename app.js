@@ -3671,8 +3671,8 @@ function mapEtaRow(row){
     rota:       pick(x, ['rota','rota meli','servico','service']),
     motorista:  pick(x, ['motorista','condutor','driver']),
     placa:      pick(x, ['placa','placa cavalo','placa trator','plate']),
-    etaOrigem:  parseDateBR(pick(x, ['eta origem','eta na origem','eta','previsao chegada origem','horario eta'])),
-    etaBipagem: parseDateBR(pick(x, ['eta bipagem','bipagem','horario bipagem','data bipagem'])),
+    etaOrigem:  parseDateBR(cell(row,'F')) || parseDateBR(pick(x, ['eta origem','eta na origem','eta','previsao chegada origem','horario eta'])),
+    etaBipagem: parseDateBR(cell(row,'G')) || parseDateBR(pick(x, ['eta bipagem','bipagem','horario bipagem','data bipagem'])),
     status:     pick(x, ['status','status viagem','situacao']),
     statusOTS:  pick(x, ['status ots','ots','status no prazo']),
     tipoRota:   pick(x, ['tipo rota','tipo','modal','tipo de rota']),
@@ -3683,7 +3683,7 @@ function mapEtaRow(row){
     classificacao:      deriveClasse(classeTexto),
     responsavel: pick(x, ['responsavel','analista','operador','owner']),
     preventivo:  pick(x, ['preventivo','contato preventivo']),
-    checklist:   pick(x, ['checklist','check list']),
+    checklist:   cell(row,'AF') || pick(x, ['checklist valido','checklist','check list']),   // AF = Checklist Valido
     velocidade:  parseNum(pick(x, ['velocidade','velocidade atual','km h','velocidade km h'])),
     // --- por POSIÇÃO de coluna (definido pelo Caio) ---
     horarioMax:  parseDateBR(cell(row,'F')),  // F = horário máximo de chegada
@@ -3763,14 +3763,16 @@ function mapXptRow(row){
     motorista:  cell(row,'C'),
     placa:      cell(row,'D'),
     veiculo:    cell(row,'E'),
-    etaOrigem:  parseDateBR(cell(row,'F')),   // F = CPT previsto
-    bipagemCPT: parseDateBR(cell(row,'G')),   // G = bipagem real
+    // A aba ganhou uma coluna: antes F=CPT previsto e G=bipagem real.
+    // Hoje: F=ETA Origem · G=CPT (previsto) · I=Bipagem CPT (real).
+    etaOrigem:  parseDateBR(cell(row,'G')),   // G = CPT previsto
+    bipagemCPT: parseDateBR(cell(row,'I')),   // I = bipagem real do CPT
     status:     cell(row,'H'),
     hus:        parseNum(cell(row,'J')),
     pacotes:    parseNum(cell(row,'K')),
     doc:        cell(row,'N'),
-    performance:cell(row,'O'),
-    pontuacao:  parseNum(cell(row,'T')),
+    performance:cell(row,'O'),                // O = Perfomance condutor
+    pontuacao:  null,                         // a antiga col T virou "COPILOTO" — pontuação saiu da aba
     obs:        cell(row,'U')
   };
 }
