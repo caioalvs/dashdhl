@@ -283,10 +283,23 @@ function buildSmIndex(){
 
 // Índice de Ocorrências: protocolo -> texto da ocorrência (motivo em sistema)
 let OCOR_INDEX = {};
+// Causa raíz (col Q da aba Ocorrências) por protocolo. A Base (col AQ) parou de ser preenchida,
+// então a causa raíz passa a vir daqui, com a Base só como reserva.
+let CAUSA_INDEX = {};
 // tira o "(Cidade)" da sigla do service center, deixando só a sigla compacta (ex.: "BRXSP10 (Guarulhos Ii)" -> "BRXSP10")
 function siglaOnly(s){ return String(s||'').replace(/\s*\(.*?\)\s*/g,' ').trim(); }
 function buildOcorIndex(){
-  OCOR_INDEX = {};
+  OCOR_INDEX = {}; CAUSA_INDEX = {};
+  // causa raíz por protocolo (col Q) — junta as distintas quando a rota tem mais de um registro
+  const causas = {};
+  (DASHBOARD_DATA.ocorrencias || []).forEach(r => {
+    const p = String(r.protocolo || '').trim();
+    const c = fixMojibake((r.causaRaiz || '').trim());
+    if(!p || !c || /^#n\/?a$/i.test(c)) return;
+    (causas[p] = causas[p] || []);
+    if(!causas[p].includes(c)) causas[p].push(c);
+  });
+  Object.keys(causas).forEach(p => { CAUSA_INDEX[p] = causas[p].join(' · '); });
   // 1) agrupa por protocolo -> trecho -> lista de ocorrências (sem repetir o rótulo do trecho)
   const byProto = {};
   (DASHBOARD_DATA.ocorrencias || []).forEach(r => {
@@ -430,7 +443,7 @@ function enrichData(){
     const pk = String(d.protocolo || '').trim();
     d.ocorrencia = OCOR_INDEX[pk] || '';
     const b = BASE_INDEX[pk];
-    d.causaRaiz = fixMojibake(b && b.causaRaiz ? b.causaRaiz.trim() : '');
+    d.causaRaiz = CAUSA_INDEX[pk] || fixMojibake(b && b.causaRaiz ? b.causaRaiz.trim() : '');
   });
 
   // ---- ETD: faixa pela coluna Q (km/h médio necessário), parados (col L) e prioridade
@@ -488,7 +501,7 @@ function enrichData(){
       const est = (base.estado || '').trim().toLowerCase();
       d.baseEstado = base.estado || '';
       d.baseSub    = base.substatus || '';
-      d.causaRaiz  = fixMojibake((base.causaRaiz || '').trim());
+      d.causaRaiz  = CAUSA_INDEX[pkey] || fixMojibake((base.causaRaiz || '').trim());
       d.origemATD  = (base.origemATD || '').trim();
       d.routeId    = base.routeId || '';
       d.naoIniciada = (est === 'pendente');
@@ -948,10 +961,8 @@ function renderXptTable(){
       <td>${statusBadge(d.status)}</td>
       <td class="num">${d.pacotes!=null?d.pacotes.toLocaleString('pt-BR'):'—'}</td>
       <td>${docB}</td>
-      <td>${escapeHtml(d.performance||'—')}</td>
-      <td class="mono num">${d.pontuacao!=null?d.pontuacao:'—'}</td>
     </tr>`;
-  }).join('') : `<tr><td colspan="11"><div class="empty-state">Nenhum checkpoint corresponde à busca.</div></td></tr>`;
+  }).join('') : `<tr><td colspan="9"><div class="empty-state">Nenhum checkpoint corresponde à busca.</div></td></tr>`;
 }
 
 let _valFilter = 'all', _valSearch = '', _valLast = [];
@@ -3362,7 +3373,7 @@ async function boot(){
   { const xs = $('#f-xpt-search'); if(xs) xs.addEventListener('input', () => { _xptSearch = xs.value; renderXptTable(); }); }
   { const xst = $('#xpt-status'); if(xst) xst.addEventListener('change', () => { _xptStatus = xst.value; renderXptTable(); }); }
   { const xe = $('#xpt-export'); if(xe) xe.addEventListener('click', () => {
-      const cols = [{label:'Protocolo',get:d=>d.protocolo},{label:'Nomenclatura',get:d=>d.rota},{label:'Motorista',get:d=>d.motorista},{label:'Placa',get:d=>d.placa},{label:'CPT previsto',get:d=>fmtDateTime(d.etaOrigem)},{label:'Bipagem CPT',get:d=>fmtDateTime(d.bipagemCPT)},{label:'Status',get:d=>d.status},{label:'Pacotes',get:d=>d.pacotes},{label:'DOC',get:d=>d.doc},{label:'Performance',get:d=>d.performance},{label:'Pontuação',get:d=>d.pontuacao}];
+      const cols = [{label:'Protocolo',get:d=>d.protocolo},{label:'Nomenclatura',get:d=>d.rota},{label:'Motorista',get:d=>d.motorista},{label:'Placa',get:d=>d.placa},{label:'CPT previsto',get:d=>fmtDateTime(d.etaOrigem)},{label:'Bipagem CPT',get:d=>fmtDateTime(d.bipagemCPT)},{label:'Status',get:d=>d.status},{label:'Pacotes',get:d=>d.pacotes},{label:'DOC',get:d=>d.doc}];
       downloadCsv('xpt.csv', toCsv(cols, _xptLast)); }); }
   { const vs = $('#f-val-search'); if(vs) vs.addEventListener('input', () => { _valSearch = vs.value; renderValTable(); }); }
   { const ve = $('#val-export'); if(ve) ve.addEventListener('click', () => {
@@ -3771,8 +3782,6 @@ function mapXptRow(row){
     hus:        parseNum(cell(row,'J')),
     pacotes:    parseNum(cell(row,'K')),
     doc:        cell(row,'N'),
-    performance:cell(row,'O'),                // O = Perfomance condutor
-    pontuacao:  null,                         // a antiga col T virou "COPILOTO" — pontuação saiu da aba
     obs:        cell(row,'U')
   };
 }
@@ -3815,7 +3824,8 @@ function mapSmRow(row){
 // Aba Ocorrências: A = protocolo · O = ocorrência (motivo em sistema)
 function mapOcorrenciaRow(row){
   // A=protocolo · K=origem do trecho · L=destino do trecho · O=incidência (ocorrência)
-  return { protocolo: cell(row,'A'), oOrigem: cell(row,'K'), oDestino: cell(row,'L'), ocorrencia: cell(row,'O') };
+  // A = Rostering ID · K/L = origem/destino · O = Incidência · Q = Causa raíz do incidente
+  return { protocolo: cell(row,'A'), oOrigem: cell(row,'K'), oDestino: cell(row,'L'), ocorrencia: cell(row,'O'), causaRaiz: cell(row,'Q') };
 }
 
 // Aba Base (fonte central). Chave = Rostering ID (col B). Colunas por POSIÇÃO:
