@@ -3679,7 +3679,9 @@ function mapEtaRow(row){
   const classeTexto = pick(x, ['classificacao texto','classificacao','status ots classificacao','semaforo','farol','classe']);
   return {
     protocolo:  cell(row,'A') || pick(x, ['protocolo','protocolo meli','id','tracking id']),   // A = Protocolo (posição)
-    rota:       pick(x, ['rota','rota meli','servico','service']),
+    // B = nomenclatura. A aba passou a ter DUAS colunas "ROTA" (B = nomenclatura, M = tipo),
+    // e a leitura por nome ficava com a última (o tipo) — por isso é lida por posição.
+    rota:       cell(row,'B') || pick(x, ['rota','rota meli','servico','service']),
     motorista:  pick(x, ['motorista','condutor','driver']),
     placa:      pick(x, ['placa','placa cavalo','placa trator','plate']),
     etaOrigem:  parseDateBR(cell(row,'F')) || parseDateBR(pick(x, ['eta origem','eta na origem','eta','previsao chegada origem','horario eta'])),
@@ -3687,8 +3689,10 @@ function mapEtaRow(row){
     status:     pick(x, ['status','status viagem','situacao']),
     statusOTS:  pick(x, ['status ots','ots','status no prazo']),
     tipoRota:   pick(x, ['tipo rota','tipo','modal','tipo de rota']),
-    origem:     pick(x, ['origem','local origem','base origem','from']),
-    destino:    pick(x, ['destino','local destino','base destino','to']),
+    // N/O = origem e destino por NOME. Também há V/Y com as siglas e o mesmo cabeçalho,
+    // o que fazia a leitura por nome trazer a sigla no lugar do nome.
+    origem:     cell(row,'N') || pick(x, ['origem','local origem','base origem','from']),
+    destino:    cell(row,'O') || pick(x, ['destino','local destino','base destino','to']),
     sinal:      pick(x, ['sinal','status sinal','posicao','rastreamento']),
     classificacaoTexto: classeTexto,
     classificacao:      deriveClasse(classeTexto),
