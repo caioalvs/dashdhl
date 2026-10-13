@@ -43,7 +43,10 @@ function enviarHistoricoSupabase() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var base = ss.getSheetByName(NOME_ABA_BASE);
   if (!base) { ss.toast('Aba "' + NOME_ABA_BASE + '" não encontrada.', 'Falhou', 8); return; }
-  var dados = base.getDataRange().getValues();
+  // Lê só até a última coluna usada em C (13/10/2026: antes lia as 116 colunas da Base e passava de 2 min).
+  // Pra mandar um campo novo ao painel, basta incluir em C — a largura da leitura se ajusta sozinha.
+  var colMax = Math.max.apply(null, Object.keys(C).map(function (k) { return C[k]; }));
+  var dados = base.getRange(1, 1, base.getLastRow(), Math.min(colMax, base.getLastColumn())).getValues();
   var mapa = {};
 
   // Ocorrência por protocolo (aba Ocorrências). Vira a causa_raiz no histórico.
