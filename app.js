@@ -3797,7 +3797,8 @@ function mapValRow(row){
     placas:      pick(x, ['placas','placa','placas cavalo carreta']),
     servico:     pick(x, ['servico','rota','service']),
     statusPortal: cell(row,'H') || pick(x, ['status portal','validacao portal','portal','validacao']),  // H = status portal
-    divergencia:  cell(row,'O') || pick(x, ['divergencia','divergencias','diferenca'])                  // O = o que está errado
+    // pelo NOME do cabeçalho: a letra mudou com colunas inseridas (O → P → Q em 18/10/2026)
+    divergencia:  pick(x, ['validacao dados incorretos','divergencia','divergencias','diferenca'])
   };
 }
 

@@ -38,7 +38,7 @@ Tudo roda no navegador, sem build step/bundler:
 - **Base** (apoio, **fonte central**, liga por **Rostering ID** = protocolo do ETD): `B` Rostering ID, `A` Route ID, `S` Origem ETD (saída **programada** — usada no Portal), `T` Origem ATD (saída real), `AM` **Estado** (`Pendente`/`Em andamento`/`Finalizado`/`Cancelado`), `AN` Substatus, `AQ` Causa raiz do incidente. É uma **janela rolante de ~13 dias** (não guarda passado — por isso o histórico vai pro Supabase).
 - **Origem-destino** (apoio, liga por **nomenclatura** = col B do ETD): `B`/`C` sigla/nome origem, `D`/`E` sigla/nome destino, `F` nomenclatura.
 - **Links** (apoio, liga por **sigla**): `A` nome/cidade, `B` sigla, `E` endereço escrito, `G` link do Maps, `H` coordenada `lat, lon` (preenchida pelo Apps Script).
-- **XPT**: validação de checkpoint (bipagem CPT). **PORTAL** (`validacao`): auditoria, `H` status portal, `O` divergência, + coluna **Saída programada** (puxada da Base col `S` pelo protocolo, pra saber prioridade).
+- **XPT**: validação de checkpoint (bipagem CPT). **PORTAL** (`validacao`): auditoria, `H` status portal, divergência pelo **nome** do cabeçalho "Validação DADOS INCORRETOS" (era `O`; a letra mudou com colunas inseridas — em 18/10/2026 está em `Q`), + coluna **Saída programada** (puxada da Base col `S` pelo protocolo, pra saber prioridade).
 
 ### Status pela Base (correção do "aguardando início" e do "finalizado")
 A Base **manda sobre a SM** (`enrichData`, loop do ETD):
