@@ -1035,7 +1035,7 @@ function bindValidacao(){
 /*  · prazo conta da saída real (E); sem E, do CPT previsto (D).             */
 /*  · pendente há ≥ 20 min = atrasado. ≥ 60 crítico · 40–59 alto.            */
 /*  · exceção: E vazio + H (Substatus) = NO PRAZO/ATRASADO → saída já bipada, */
-/*    a hora real vem da Base (col T, Origem ATD — trecho mais recente).     */
+/*    a hora real vem da Base (col T do trecho da ÚLTIMA coleta).            */
 /* ----------------------------------------------------------------------- */
 const DOCS_ENVIADO = ['ENVIADO','T1'];
 const DOCS_FORA = ['cancelado','infrutifera','reversa'];   // situações com tabela própria
@@ -1049,14 +1049,37 @@ let _docsMsVals = { tipoDest:[], tipoCpt:[], horaCpt:[] };
 const docsHoraLbl = iso => { if(!iso) return ''; const d = new Date(iso); return isNaN(d) ? '' : String(d.getHours()).padStart(2,'0')+'h'; };
 const docsNorm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim();
 
-// saída real mais recente por protocolo na Base (col T) — usada na exceção "saída bipada"
+// Exceção "saída bipada" — cópia do dhl_carregarBase do script DOCS.gs:
+//  · última coleta = ÚLTIMO trecho com Pickup antes do primeiro Dropoff (trecho vazio no meio não para);
+//  · nº de coletas da rota = MAIOR valor entre as viagens da mesma rota (nome até ".SOW"), porque
+//    viagem em andamento ainda não registrou o Pickup; sem dado = 1 coleta;
+//  · saída = Origem ATD (col T) DESSE trecho. Vazio = a última coleta ainda não saiu → doc não é devido.
+const docsNormRota = s => { const r = String(s || '').trim().toUpperCase(); const i = r.indexOf('.SOW'); return i > 0 ? r.slice(0, i) : r; };
 function docsSaidasBase(){
-  const m = {};
+  const viagens = {};
   (DASHBOARD_DATA.base || []).forEach(r => {
-    const p = String(r.protocolo || '').trim();
-    const t = parseDateBR(r.origemATD);
-    if(!p || !t) return;
-    if(!m[p] || new Date(t) > new Date(m[p])) m[p] = t;
+    const id = String(r.protocolo || '').trim();
+    if(!id || id === '0' || isNaN(r.trecho)) return;
+    const k = `${r.servico || ''}|${id}`;
+    const v = viagens[k] || (viagens[k] = { id, rota: r.servico || '', trechos: {} });
+    v.trechos[r.trecho] = { pu: r.pickup || 0, drop: r.dropoff || 0, saida: parseDateBR(r.origemATD) };
+  });
+  const coletas = {};
+  Object.values(viagens).forEach(v => {
+    let n = 0;
+    for(let t = 1; t <= 20; t++){
+      const tr = v.trechos[t]; if(!tr) break;
+      if(tr.drop > 0) break;          // começou a entregar: fase de coleta acabou
+      if(tr.pu > 0) n = t;            // registrou coleta neste trecho
+    }
+    const kr = docsNormRota(v.rota);
+    if(!coletas[kr] || n > coletas[kr]) coletas[kr] = n;
+  });
+  const m = {};
+  Object.values(viagens).forEach(v => {
+    const alvo = coletas[docsNormRota(v.rota)] || 1;
+    const tr = v.trechos[alvo];
+    if(tr && tr.saida) m[v.id] = tr.saida;   // só entra se a última coleta JÁ saiu
   });
   return m;
 }
@@ -4149,7 +4172,11 @@ function mapBaseRow(row){
     estado:    cell(row,'AM'),  // Pendente = ainda não iniciou
     substatus: cell(row,'AN'),
     pacotes:   parseNum(cell(row,'AK')),  // AK = pacotes (reversa com pacotes vira prioritária)
-    causaRaiz: cell(row,'AQ')
+    causaRaiz: cell(row,'AQ'),
+    trecho:    parseInt(cell(row,'N'), 10),   // N = nº do trecho
+    // movimentação de carga do trecho (mesmas colunas do script DOCS.gs): pickups e dropoffs
+    pickup:    ['AW','AY','BA','BC','BE','BG','BI'].reduce((s,c) => s + (parseNum(cell(row,c)) || 0), 0),
+    dropoff:   ['AX','AZ','BB','BD','BF','BH','BJ'].reduce((s,c) => s + (parseNum(cell(row,c)) || 0), 0)
   };
 }
 
