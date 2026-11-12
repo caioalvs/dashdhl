@@ -1024,6 +1024,227 @@ function bindValidacao(){
 }
 
 /* ----------------------------------------------------------------------- */
+/* DOCUMENTAÇÃO — mesma regra do Apps Script "Verificar Pendências Docs"     */
+/* (verificarAtrasoDocumentos, arquivo DOCS.gs da planilha):                 */
+/*  · lê a ETD; coluna DOCS (W). ENVIADO = enviado. T1/REVERSA/CANCELADO(A)/ */
+/*    INFRUTIFERA/MW = não se aplica (o script ignora). Resto = pendente.     */
+/*  · prazo conta da saída real (E); sem E, do CPT previsto (D).             */
+/*  · pendente há ≥ 20 min = atrasado. ≥ 60 crítico · 40–59 alto.            */
+/*  · exceção: E vazio + H (Substatus) = NO PRAZO/ATRASADO → saída já bipada, */
+/*    a hora real vem da Base (col T, Origem ATD — trecho mais recente).     */
+/* ----------------------------------------------------------------------- */
+const DOCS_IGNORADOS = ['T1','REVERSA','CANCELADO','CANCELADA','INFRUTIFERA','MW'];
+const DOCS_H_SAIDA   = ['NO PRAZO','ATRASADO'];
+const DOCS_LIMITE_MIN = 20;
+let _docsFilter = 'all', _docsSearch = '', _docsOrigem = '', _docsCpt = '', _docsLast = [];
+const docsNorm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim();
+
+// saída real mais recente por protocolo na Base (col T) — usada na exceção "saída bipada"
+function docsSaidasBase(){
+  const m = {};
+  (DASHBOARD_DATA.base || []).forEach(r => {
+    const p = String(r.protocolo || '').trim();
+    const t = parseDateBR(r.origemATD);
+    if(!p || !t) return;
+    if(!m[p] || new Date(t) > new Date(m[p])) m[p] = t;
+  });
+  return m;
+}
+function docsMinFmt(min){
+  if(min == null) return '—';
+  const h = Math.floor(min/60), mm = min % 60;
+  return h ? `${h}h${String(mm).padStart(2,'0')}` : `${mm} min`;
+}
+function docsRows(){
+  const agora = Date.now();
+  const saidas = docsSaidasBase();
+  const out = [];
+  (DASHBOARD_DATA.etd || []).forEach(d => {
+    const proto = String(d.protocolo || '').trim();
+    if(!proto) return;
+    const st = docsNorm(d.docs);
+    const r = {
+      protocolo: proto,
+      travelId: isNA(d.travelId) ? (d.routeId || '') : String(d.travelId).trim(),
+      rota: d.rota || '',
+      cpt: d.cpt || null,
+      origem: d.odOrigemSigla || d.origem || '—',
+      pacotes: d.pacotesT != null ? d.pacotesT : (d.pacotes != null ? d.pacotes : 0),
+      docsTxt: String(d.docs || '').trim(),
+      refLabel: '', refHora: null, min: null, sev: ''
+    };
+    if(DOCS_IGNORADOS.includes(st)){ r.situacao = 'na'; out.push(r); return; }
+    if(st === 'ENVIADO'){ r.situacao = 'enviado'; out.push(r); return; }
+    // pendente: conta o tempo desde a saída (E) ou, sem ela, desde o CPT previsto (D)
+    const ref = d.bipagemCPT || d.cpt;
+    r.situacao = 'pendente';
+    if(ref){
+      r.refLabel = d.bipagemCPT ? 'Saída real' : 'CPT previsto';
+      r.refHora = ref;
+      r.min = Math.floor((agora - new Date(ref).getTime()) / 60000);
+    }
+    // exceção: D já virou pro próximo CPT, E vazio, mas H diz que saiu → hora real na Base
+    if(!(r.min >= DOCS_LIMITE_MIN) && !d.bipagemCPT && DOCS_H_SAIDA.includes(docsNorm(d.substatusH))){
+      const sb = saidas[proto];
+      if(sb){
+        const mb = Math.floor((agora - new Date(sb).getTime()) / 60000);
+        if(mb >= DOCS_LIMITE_MIN){ r.refLabel = 'Saída real (Base)'; r.refHora = sb; r.min = mb; }
+      }
+    }
+    if(r.min != null && r.min >= DOCS_LIMITE_MIN){
+      r.situacao = 'atrasado';
+      r.sev = r.min >= 60 ? 'critico' : (r.min >= 40 ? 'alto' : 'atencao');
+    }
+    out.push(r);
+  });
+  return out;
+}
+const docsHoraKey = iso => { if(!iso) return null; const d = new Date(iso); return isNaN(d) ? null : d.getHours(); };
+const docsCptKey  = iso => iso ? fmtDateTime(iso) : 'Sem CPT';
+function docsAgg(rows, keyFn){
+  const g = {};
+  rows.forEach(r => {
+    const k = keyFn(r);
+    const a = g[k] || (g[k] = { k, total:0, enviado:0, pendente:0, atrasado:0, pacotes:0, sortKey: r.cpt ? new Date(r.cpt).getTime() : Infinity });
+    a.total++; a[r.situacao]++; a.pacotes += Number(r.pacotes) || 0;
+  });
+  return Object.values(g);
+}
+function docsSituacaoBadge(r){
+  if(r.situacao === 'enviado') return '<span class="badge b-verde"><span class="badge-dot"></span>Enviado</span>';
+  if(r.situacao === 'atrasado'){
+    const cls = r.sev === 'atencao' ? 'b-amarelo' : 'b-vermelho';
+    return `<span class="badge ${cls}"><span class="badge-dot"></span>Pendente</span>`;
+  }
+  return '<span class="badge b-cinza"><span class="badge-dot"></span>Pendente</span>';
+}
+function docsAtrasoCell(r){
+  if(r.situacao === 'enviado') return '<span class="ocor-empty">—</span>';
+  if(r.situacao === 'atrasado'){
+    const cor = r.sev === 'critico' ? 'var(--red)' : (r.sev === 'alto' ? '#e8730c' : 'var(--amber)');
+    return `<b style="color:${cor}">${docsMinFmt(r.min)}</b> <span class="ocor-empty">desde ${escapeHtml(r.refLabel.toLowerCase())} ${fmtDateTime(r.refHora).slice(-5)}</span>`;
+  }
+  if(r.min == null) return '<span class="ocor-empty">sem CPT</span>';
+  if(r.min < 0) return `<span class="ocor-empty">CPT em ${docsMinFmt(-r.min)}</span>`;
+  return `<span class="ocor-empty">no prazo · faltam ${DOCS_LIMITE_MIN - r.min} min</span>`;
+}
+function renderDocs(){
+  if(!$('#view-docs')) return;
+  const todas = docsRows();
+  const all = todas.filter(r => r.situacao !== 'na');
+  const naCount = todas.length - all.length;
+  const env = all.filter(r => r.situacao === 'enviado');
+  const pen = all.filter(r => r.situacao === 'pendente');
+  const atr = all.filter(r => r.situacao === 'atrasado');
+  const crit = atr.filter(r => r.sev === 'critico').length;
+  const sumPac = rs => rs.reduce((s,r) => s + (Number(r.pacotes)||0), 0);
+  const nf = n => Number(n||0).toLocaleString('pt-BR');
+  const badge = $('#badgeDocs'); if(badge) badge.textContent = atr.length;
+
+  // ---- quantidade geral
+  $('#docs-kpi-total').textContent = all.length;
+  $('#docs-kpi-env').textContent   = env.length;
+  $('#docs-kpi-pen').textContent   = pen.length;
+  $('#docs-kpi-atr').textContent   = atr.length;
+  $('#docs-kpi-pac').textContent   = nf(sumPac(all));
+  $('#docs-kpi-total-sub').textContent = `Rotas da ETD${naCount ? ` · ${naCount} fora (T1/reversa/cancel.)` : ''}`;
+  $('#docs-kpi-env-sub').textContent = all.length ? `${Math.round(env.length/all.length*100)}% emitidos · ${nf(sumPac(env))} pacotes` : '—';
+  $('#docs-kpi-pen-sub').textContent = `Aguardando saída ou < ${DOCS_LIMITE_MIN} min · ${nf(sumPac(pen))} pacotes`;
+  $('#docs-kpi-atr-sub').textContent = `${crit} crítico(s) ≥ 60 min · ${nf(sumPac(atr))} pacotes`;
+  $('#docs-kpi-pac-sub').textContent = `${nf(sumPac(pen) + sumPac(atr))} pacotes sem documento`;
+  setRibbon('docs', atr.length ? (crit ? 'vermelho' : 'amarelo') : 'verde',
+    atr.length ? `<span class="hl-strong">${atr.length}</span> documento${atr.length>1?'s':''} atrasado${atr.length>1?'s':''} (&gt;${DOCS_LIMITE_MIN} min)` : 'Documentação em dia',
+    segBar([{n:env.length,color:'var(--green)'},{n:pen.length,color:'var(--grey)'},{n:atr.length,color:'var(--red)'}]),
+    statItem('var(--green)','Enviados',env.length)+statItem('var(--grey)','Pendentes',pen.length)+statItem('var(--red)','Atrasados',atr.length));
+  $$('#view-docs .kpi-card[data-docskpi]').forEach(c => c.classList.toggle('active', c.dataset.docskpi === _docsFilter));
+
+  // ---- visão por horário (hora do CPT)
+  const horas = Array.from({length:24}, (_,h) => h);
+  const porHora = { enviado:Array(24).fill(0), pendente:Array(24).fill(0), atrasado:Array(24).fill(0) };
+  all.forEach(r => { const h = docsHoraKey(r.cpt); if(h != null) porHora[r.situacao][h]++; });
+  const cv = $('#chart-docs-hora');
+  if(cv && typeof Chart !== 'undefined'){
+    destroyChart('docsHora');
+    charts.docsHora = new Chart(cv, { type:'bar',
+      data:{ labels: horas.map(h => String(h).padStart(2,'0')+'h'), datasets:[
+        { label:'Enviado',  data:porHora.enviado,  backgroundColor:PALETTE.green, borderRadius:3, borderWidth:0, stack:'s' },
+        { label:'Pendente', data:porHora.pendente, backgroundColor:PALETTE.grey,  borderRadius:3, borderWidth:0, stack:'s' },
+        { label:'Atrasado', data:porHora.atrasado, backgroundColor:PALETTE.red,   borderRadius:3, borderWidth:0, stack:'s' } ] },
+      options:{ responsive:true, maintainAspectRatio:false,
+        scales:{ x:{ stacked:true }, y:{ stacked:true, beginAtZero:true, ticks:{ precision:0 } } },
+        plugins:{ legend:{ position:'bottom', labels:{ boxWidth:10 } } } } });
+  }
+
+  // ---- visão por origem e quantidade por CPT (clicar filtra a tabela de detalhe)
+  const aggRow = (a, attr, active) => `
+    <tr data-${attr}="${escapeHtml(a.k)}" class="${a.atrasado?'crit':''}${active?' docs-sel':''}" style="cursor:pointer">
+      <td class="mono">${escapeHtml(a.k)}</td>
+      <td class="num">${a.total}</td>
+      <td class="num" style="color:var(--green)">${a.enviado}</td>
+      <td class="num">${a.pendente}</td>
+      <td class="num" style="color:var(--red)">${a.atrasado||''}</td>
+      <td class="num">${nf(a.pacotes)}</td>
+      <td class="num">${Math.round(a.enviado/a.total*100)}%</td>
+    </tr>`;
+  const porOrigem = docsAgg(all, r => r.origem).sort((a,b) => (b.atrasado+b.pendente) - (a.atrasado+a.pendente) || b.total - a.total);
+  $('#docs-origem-tbody').innerHTML = porOrigem.length ? porOrigem.map(a => aggRow(a,'origem',a.k===_docsOrigem)).join('')
+    : `<tr><td colspan="7"><div class="empty-state">Sem rotas.</div></td></tr>`;
+  const porCpt = docsAgg(all, r => docsCptKey(r.cpt)).sort((a,b) => a.sortKey - b.sortKey);
+  $('#docs-cpt-tbody').innerHTML = porCpt.length ? porCpt.map(a => aggRow(a,'cpt',a.k===_docsCpt)).join('')
+    : `<tr><td colspan="7"><div class="empty-state">Sem rotas.</div></td></tr>`;
+
+  // ---- visão geral (detalhe)
+  let rows = all;
+  if(_docsFilter === 'enviado')  rows = env;
+  else if(_docsFilter === 'pendente') rows = pen;
+  else if(_docsFilter === 'atrasado') rows = atr;
+  else if(_docsFilter === 'abertos')  rows = pen.concat(atr);
+  if(_docsOrigem) rows = rows.filter(r => r.origem === _docsOrigem);
+  if(_docsCpt)    rows = rows.filter(r => docsCptKey(r.cpt) === _docsCpt);
+  const q = _docsSearch.trim().toLowerCase();
+  if(q) rows = rows.filter(r => `${r.protocolo} ${r.travelId} ${r.rota} ${r.origem} ${r.docsTxt}`.toLowerCase().includes(q));
+  // atrasados primeiro (maior atraso), depois pendentes, depois enviados; dentro, por CPT
+  const ord = { atrasado:0, pendente:1, enviado:2 };
+  rows = rows.slice().sort((a,b) => (ord[a.situacao]-ord[b.situacao]) || ((b.min||0)-(a.min||0)) * (a.situacao==='atrasado'?1:0) || ((a.cpt?new Date(a.cpt):Infinity) - (b.cpt?new Date(b.cpt):Infinity)));
+  _docsLast = rows;
+  const sel = [_docsOrigem && `origem ${_docsOrigem}`, _docsCpt && `CPT ${_docsCpt}`].filter(Boolean).join(' · ');
+  const fl = $('#docs-filtro-sel');
+  if(fl){ fl.style.display = sel ? '' : 'none'; fl.innerHTML = sel ? `${escapeHtml(sel)} <b>✕</b>` : ''; }
+  $('#docs-count').textContent = rows.length;
+  $('#docs-count-pac').textContent = nf(sumPac(rows));
+  $('#docs-tbody').innerHTML = rows.length ? rows.map(r => `
+    <tr class="${r.situacao==='atrasado' && r.sev!=='atencao'?'crit':''}">
+      <td class="mono">${escapeHtml(r.protocolo)}</td>
+      <td class="mono">${r.travelId ? escapeHtml(r.travelId) : '<span class="ocor-empty">—</span>'}</td>
+      <td class="mono">${escapeHtml(r.rota)}</td>
+      <td class="mono">${escapeHtml(r.origem)}</td>
+      <td>${fmtDateTime(r.cpt)}</td>
+      <td>${docsSituacaoBadge(r)}${r.docsTxt && r.situacao!=='enviado' ? ` <span class="ocor-empty" title="Coluna DOCS">${escapeHtml(r.docsTxt)}</span>` : ''}</td>
+      <td>${docsAtrasoCell(r)}</td>
+      <td class="num">${nf(r.pacotes)}</td>
+    </tr>`).join('') : `<tr><td colspan="8"><div class="empty-state">Nenhuma rota nesta categoria.</div></td></tr>`;
+}
+function bindDocs(){
+  const host = $('#view-docs');
+  if(!host || host._docsBound) return; host._docsBound = true;
+  host.addEventListener('click', e => {
+    const card = e.target.closest('.kpi-card[data-docskpi]');
+    if(card){ const v = card.dataset.docskpi; _docsFilter = (_docsFilter === v && v !== 'all') ? 'all' : v; renderDocs(); return; }
+    const to = e.target.closest('tr[data-origem]');
+    if(to){ _docsOrigem = (_docsOrigem === to.dataset.origem) ? '' : to.dataset.origem; renderDocs(); return; }
+    const tc = e.target.closest('tr[data-cpt]');
+    if(tc){ _docsCpt = (_docsCpt === tc.dataset.cpt) ? '' : tc.dataset.cpt; renderDocs(); return; }
+    if(e.target.closest('#docs-filtro-sel')){ _docsOrigem = ''; _docsCpt = ''; renderDocs(); }
+  });
+  const s = $('#f-docs-search'); if(s) s.addEventListener('input', () => { _docsSearch = s.value; renderDocs(); });
+  const ex = $('#docs-export'); if(ex) ex.addEventListener('click', () => {
+    const lbl = { enviado:'Enviado', pendente:'Pendente', atrasado:'Pendente (atrasado)' };
+    const cols = [{label:'Protocolo',get:r=>r.protocolo},{label:'Travel ID',get:r=>r.travelId},{label:'Nomenclatura',get:r=>r.rota},{label:'Origem',get:r=>r.origem},{label:'CPT',get:r=>fmtDateTime(r.cpt)},{label:'Situação',get:r=>lbl[r.situacao]},{label:'Atraso emissão (min)',get:r=>r.situacao==='atrasado'?r.min:''},{label:'Referência',get:r=>r.situacao==='atrasado'?`${r.refLabel} ${fmtDateTime(r.refHora)}`:''},{label:'Pacotes',get:r=>r.pacotes},{label:'DOCS',get:r=>r.docsTxt}];
+    downloadCsv('documentacao.csv', toCsv(cols, _docsLast));
+  });
+}
+
+/* ----------------------------------------------------------------------- */
 /* Gráficos                                                                 */
 /* ----------------------------------------------------------------------- */
 Chart.defaults.color = PALETTE.dim;
@@ -3045,6 +3266,7 @@ function renderAll(){
   refreshEtd();
   renderXptTable();
   renderValTable();
+  renderDocs();
   $('#badgeMapa').textContent = etdAtivos.filter(d => !d.naoPrioritaria && !d.naoIniciada && !d.divergenciaSM).length;
   // resumo útil no masthead (substitui o subtítulo decorativo)
   const etaAtras = DASHBOARD_DATA.eta.filter(d => d.classificacao === 'vermelho').length;
@@ -3112,7 +3334,7 @@ function bindTabs(){
       $$('.tab-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       const tab = btn.dataset.tab;
-      ['eta','etd','descarga','xpt','validacao','mapa','alertas','gestao','relatorios'].forEach(t=>{
+      ['eta','etd','descarga','xpt','validacao','docs','mapa','alertas','gestao','relatorios'].forEach(t=>{
         const v = $('#view-'+t); if(v) v.style.display = (t===tab)?'block':'none';
       });
       // entrada suave da aba ativa (re-dispara a animação)
@@ -3127,6 +3349,7 @@ function bindTabs(){
       if(tab==='descarga'){ renderDescarga(); }
       if(tab==='relatorios'){ renderRelatorios(); }
       if(tab==='validacao') renderValTable();
+      if(tab==='docs') renderDocs();
       if(tab==='xpt') renderXptTable();
       saveView();
     });
@@ -3370,6 +3593,7 @@ async function boot(){
   bindRelatorios();
   bindDescarga();
   bindValidacao();
+  bindDocs();
   { const xs = $('#f-xpt-search'); if(xs) xs.addEventListener('input', () => { _xptSearch = xs.value; renderXptTable(); }); }
   { const xst = $('#xpt-status'); if(xst) xst.addEventListener('change', () => { _xptStatus = xst.value; renderXptTable(); }); }
   { const xe = $('#xpt-export'); if(xe) xe.addEventListener('click', () => {
@@ -3763,6 +3987,11 @@ function mapEtdRow(row){
     postoU:     cell(row,'U'),   // U = posto fiscal (acompanhamento)
     postoV:     cell(row,'V'),   // V = posto fiscal (acompanhamento)
     docs:       cell(row,'W'),   // W = DOCS (documentos)
+    bipagemCPT: parseDateBR(cell(row,'E')),   // E = Bipagem CPT (saída real) — base do prazo dos docs
+    substatusH: cell(row,'H'),                // H = Substatus (NO PRAZO/ATRASADO = saída já bipada)
+    pacotesT:   parseNum(cell(row,'T')),      // T = Pacotes (SUMIF da Base AK)
+    // Travel ID pelo NOME do cabeçalho (a letra já mudou: AC → AD em 11/2026); AD de reserva
+    travelId:   pick(x, ['travel id','travelid','route id']) || cell(row,'AD'),
     cpt:        parseDateBR(cell(row,'D')) || parseDateBR(pick(x, ['cpt','cpt previsto','data cpt','horario cpt']))  // D = CPT (checkpoint/saída)
     // origem/destino reais vêm da aba SM (cidade+UF) no enrichData — a coluna O do ETD é o sinal de GPS, não o destino
   };

@@ -189,6 +189,10 @@
   .panel h3::before { content:''; flex:0 0 auto; width:3px; height:15px; border-radius:2px; background:var(--yellow); box-shadow:0 0 0 1px rgba(199,154,0,.25); margin-right:9px; }
   .panel h3 span.hint { font-size:11px; color:var(--text-dim); font-weight:500; white-space:normal; margin-left:auto; }
   .chart-row-small { display:grid; grid-template-columns: 320px 1fr; gap:14px; margin-bottom: 22px; align-items:start; }
+  .docs-grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom: 22px; align-items:start; }
+  .docs-grid .table-wrap { margin-bottom:0; }
+  tbody tr.docs-sel td { background: rgba(255,204,0,0.22) !important; }
+  @media (max-width: 1100px){ .docs-grid { grid-template-columns: 1fr; } }
   .gx-dest-split { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   @media (max-width:1100px){ .gx-dest-split { grid-template-columns:1fr; } }
   .gx-dest-cap { display:flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.4px; margin-bottom:6px; }
@@ -708,6 +712,7 @@
       <button class="tab-btn" data-tab="descarga"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"/><path d="M8 9l4 4 4-4"/><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/></svg></span><span class="nav-lbl">DESCARGA</span><span class="tab-badge" id="badgeDescarga">0</span></button>
       <button class="tab-btn" data-tab="xpt"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><span class="nav-lbl">XPT</span><span class="tab-badge" id="badgeXpt">0</span></button>
       <button class="tab-btn" data-tab="validacao"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span><span class="nav-lbl">PORTAL</span><span class="tab-badge" id="badgeVal">0</span></button>
+      <button class="tab-btn" data-tab="docs"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg></span><span class="nav-lbl">DOCUMENTAÇÃO</span><span class="tab-badge" id="badgeDocs">0</span></button>
       <div class="nav-label" style="margin-top:8px">Visão</div>
       <button class="tab-btn" data-tab="mapa"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span><span class="nav-lbl">MAPA</span><span class="tab-badge" id="badgeMapa">0</span></button>
       <button class="tab-btn" data-tab="relatorios"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h4M8 17h6"/></svg></span><span class="nav-lbl">RELATÓRIOS</span></button>
@@ -1126,6 +1131,66 @@
         </table></div></div>
       </section>
 
+      <!-- ===================== DOCUMENTAÇÃO ===================== -->
+      <section id="view-docs" style="display:none;">
+        <div class="ops-ribbon" id="ribbon-docs">
+          <div class="ops-left"><div class="ops-eyebrow">Documentação · emissão de documentos das rotas (ETD · coluna DOCS)</div><div class="ops-headline" id="docs-ops-headline">—</div></div>
+          <div class="ops-stats" id="docs-ops-stats"></div>
+          <div class="ops-bar" id="docs-ops-bar"></div>
+        </div>
+        <div class="kpi-row">
+          <div class="kpi-card k-total clickable" data-docskpi="all"><div class="kpi-label">Total de rotas</div><div class="kpi-value tabular" id="docs-kpi-total">0</div><div class="kpi-sub" id="docs-kpi-total-sub">Rotas da ETD</div></div>
+          <div class="kpi-card k-green clickable" data-docskpi="enviado"><div class="kpi-label">Enviados</div><div class="kpi-value tabular" id="docs-kpi-env">0</div><div class="kpi-sub" id="docs-kpi-env-sub">—</div></div>
+          <div class="kpi-card k-grey clickable" data-docskpi="pendente"><div class="kpi-label">Pendentes no prazo</div><div class="kpi-value tabular" id="docs-kpi-pen">0</div><div class="kpi-sub" id="docs-kpi-pen-sub">—</div></div>
+          <div class="kpi-card k-red clickable" data-docskpi="atrasado"><div class="kpi-label">Atrasados (&gt;20 min)</div><div class="kpi-value tabular" id="docs-kpi-atr">0</div><div class="kpi-sub" id="docs-kpi-atr-sub">—</div></div>
+          <div class="kpi-card k-blue"><div class="kpi-label">Total de pacotes</div><div class="kpi-value tabular" id="docs-kpi-pac">0</div><div class="kpi-sub" id="docs-kpi-pac-sub">—</div></div>
+        </div>
+
+        <div class="chart-row-small">
+          <div class="panel">
+            <h3>Como ler</h3>
+            <div class="chart-aside">
+              <p><b>Enviado</b>: coluna DOCS = ENVIADO.</p>
+              <p><b>Pendente</b>: DOCS vazio ou diferente de ENVIADO. Conta o tempo da <b>saída real</b> (Bipagem CPT) ou, sem ela, do <b>CPT previsto</b>.</p>
+              <p><b>Atrasado</b>: pendente há 20 min ou mais. Vermelho a partir de 40 min, crítico a partir de 60.</p>
+              <p>T1, REVERSA, CANCELADO, INFRUTÍFERA e MW ficam fora, igual ao script da planilha.</p>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>Visão por horário <span class="hint">rotas por hora do CPT</span></h3>
+            <div class="chart-box-sm" style="height:220px"><canvas id="chart-docs-hora"></canvas></div>
+          </div>
+        </div>
+
+        <div class="docs-grid">
+          <div class="table-wrap">
+            <div class="table-head-bar"><span class="dot" style="background:var(--yellow)"></span> Visão por origem <span class="cnt">clique p/ filtrar</span></div>
+            <div class="table-scroll short"><table>
+              <thead><tr><th>Origem</th><th class="num">Total</th><th class="num">Enviados</th><th class="num">Pendentes</th><th class="num">Atrasados</th><th class="num">Pacotes</th><th class="num">% enviado</th></tr></thead>
+              <tbody id="docs-origem-tbody"></tbody>
+            </table></div>
+          </div>
+          <div class="table-wrap">
+            <div class="table-head-bar"><span class="dot" style="background:var(--yellow)"></span> Quantidade por CPT <span class="cnt">clique p/ filtrar</span></div>
+            <div class="table-scroll short"><table>
+              <thead><tr><th>CPT</th><th class="num">Total</th><th class="num">Enviados</th><th class="num">Pendentes</th><th class="num">Atrasados</th><th class="num">Pacotes</th><th class="num">% enviado</th></tr></thead>
+              <tbody id="docs-cpt-tbody"></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <input type="text" class="search" id="f-docs-search" placeholder="Buscar protocolo, Travel ID, nomenclatura, origem...">
+          <button class="chip-export" id="docs-filtro-sel" style="display:none" title="Limpar filtro de origem/CPT"></button>
+          <button class="chip-export" id="docs-export"><i class="ico-dl"></i> Exportar CSV</button>
+          <div class="result-count"><b id="docs-count">0</b> rotas · <b id="docs-count-pac">0</b> pacotes</div>
+        </div>
+        <div class="table-wrap"><div class="table-scroll"><table>
+          <thead><tr><th>Protocolo</th><th>Travel ID</th><th>Nomenclatura</th><th>Origem</th><th>CPT</th><th>Situação</th><th>Atraso na emissão</th><th class="num">Pacotes</th></tr></thead>
+          <tbody id="docs-tbody"></tbody>
+        </table></div></div>
+      </section>
+
       <!-- ===================== MAPA da frota ===================== -->
       <section id="view-mapa" style="display:none;">
         <div class="ops-ribbon" id="ribbon-mapa" style="grid-template-columns:1fr auto; grid-template-areas:'head stats';">
@@ -1402,7 +1467,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=59"></script>
+<script src="app.js?v=60"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">
