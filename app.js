@@ -1036,7 +1036,9 @@ function bindValidacao(){
 const DOCS_IGNORADOS = ['T1','REVERSA','CANCELADO','CANCELADA','INFRUTIFERA','MW'];
 const DOCS_H_SAIDA   = ['NO PRAZO','ATRASADO'];
 const DOCS_LIMITE_MIN = 20;
-let _docsFilter = 'all', _docsSearch = '', _docsOrigem = '', _docsCpt = '', _docsLast = [];
+let _docsFilter = 'all', _docsSearch = '', _docsDestino = '', _docsCpt = '', _docsLast = [];
+// filtro "Tipo de rota" de cada tabela (destino / CPT). Clicar numa linha leva o tipo junto pro detalhe.
+let _docsTipoDest = '', _docsTipoCpt = '', _docsDestinoTipo = '', _docsCptTipo = '';
 const docsNorm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim();
 
 // saída real mais recente por protocolo na Base (col T) — usada na exceção "saída bipada"
@@ -1068,7 +1070,9 @@ function docsRows(){
       travelId: isNA(d.travelId) ? (d.routeId || '') : String(d.travelId).trim(),
       rota: d.rota || '',
       cpt: d.cpt || null,
-      origem: d.odOrigemSigla || d.origem || '—',
+      // nome do destino (aba Origem-destino col E); sem cadastro, cai na cidade da SM
+      destino: (d.odDestinoNome || d.destino || '—').trim(),
+      tipo: (d.tipoRota && !isNA(d.tipoRota) ? d.tipoRota : tipoRota(d.rota)).trim() || '—',
       pacotes: d.pacotesT != null ? d.pacotesT : (d.pacotes != null ? d.pacotes : 0),
       docsTxt: String(d.docs || '').trim(),
       refLabel: '', refHora: null, min: null, sev: ''
@@ -1175,7 +1179,14 @@ function renderDocs(){
         plugins:{ legend:{ position:'bottom', labels:{ boxWidth:10 } } } } });
   }
 
-  // ---- visão por origem e quantidade por CPT (clicar filtra a tabela de detalhe)
+  // ---- visão por destino e quantidade por CPT (clicar filtra a tabela de detalhe)
+  // seletor "Tipo de rota" de cada tabela: opções = tipos presentes nas rotas
+  const tipos = uniqueSorted(all.map(r => r.tipo));
+  [['#docs-tipo-dest', _docsTipoDest], ['#docs-tipo-cpt', _docsTipoCpt]].forEach(([sel, val]) => {
+    const el = $(sel); if(!el) return;
+    el.innerHTML = '<option value="">Todos os tipos</option>' + tipos.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+    el.value = tipos.includes(val) ? val : '';
+  });
   const aggRow = (a, attr, active) => `
     <tr data-${attr}="${escapeHtml(a.k)}" class="${a.atrasado?'crit':''}${active?' docs-sel':''}" style="cursor:pointer">
       <td class="mono">${escapeHtml(a.k)}</td>
@@ -1186,12 +1197,16 @@ function renderDocs(){
       <td class="num">${nf(a.pacotes)}</td>
       <td class="num">${Math.round(a.enviado/a.total*100)}%</td>
     </tr>`;
-  const porOrigem = docsAgg(all, r => r.origem).sort((a,b) => (b.atrasado+b.pendente) - (a.atrasado+a.pendente) || b.total - a.total);
-  $('#docs-origem-tbody').innerHTML = porOrigem.length ? porOrigem.map(a => aggRow(a,'origem',a.k===_docsOrigem)).join('')
-    : `<tr><td colspan="7"><div class="empty-state">Sem rotas.</div></td></tr>`;
-  const porCpt = docsAgg(all, r => docsCptKey(r.cpt)).sort((a,b) => a.sortKey - b.sortKey);
+  const baseDest = _docsTipoDest ? all.filter(r => r.tipo === _docsTipoDest) : all;
+  const porDestino = docsAgg(baseDest, r => r.destino).sort((a,b) => (b.atrasado+b.pendente) - (a.atrasado+a.pendente) || b.total - a.total);
+  $('#docs-destino-tbody').innerHTML = porDestino.length ? porDestino.map(a => aggRow(a,'destino',a.k===_docsDestino)).join('')
+    : `<tr><td colspan="7"><div class="empty-state">Sem rotas deste tipo.</div></td></tr>`;
+  const baseCpt = _docsTipoCpt ? all.filter(r => r.tipo === _docsTipoCpt) : all;
+  const porCpt = docsAgg(baseCpt, r => docsCptKey(r.cpt)).sort((a,b) => a.sortKey - b.sortKey);
   $('#docs-cpt-tbody').innerHTML = porCpt.length ? porCpt.map(a => aggRow(a,'cpt',a.k===_docsCpt)).join('')
-    : `<tr><td colspan="7"><div class="empty-state">Sem rotas.</div></td></tr>`;
+    : `<tr><td colspan="7"><div class="empty-state">Sem rotas deste tipo.</div></td></tr>`;
+  const sumRow = (rs, el) => { const e = $(el); if(e) e.textContent = `${rs.length} rotas · ${nf(sumPac(rs))} pacotes`; };
+  sumRow(baseDest, '#docs-destino-cnt'); sumRow(baseCpt, '#docs-cpt-cnt');
 
   // ---- visão geral (detalhe)
   let rows = all;
@@ -1199,15 +1214,16 @@ function renderDocs(){
   else if(_docsFilter === 'pendente') rows = pen;
   else if(_docsFilter === 'atrasado') rows = atr;
   else if(_docsFilter === 'abertos')  rows = pen.concat(atr);
-  if(_docsOrigem) rows = rows.filter(r => r.origem === _docsOrigem);
-  if(_docsCpt)    rows = rows.filter(r => docsCptKey(r.cpt) === _docsCpt);
+  if(_docsDestino){ rows = rows.filter(r => r.destino === _docsDestino); if(_docsDestinoTipo) rows = rows.filter(r => r.tipo === _docsDestinoTipo); }
+  if(_docsCpt){     rows = rows.filter(r => docsCptKey(r.cpt) === _docsCpt); if(_docsCptTipo) rows = rows.filter(r => r.tipo === _docsCptTipo); }
   const q = _docsSearch.trim().toLowerCase();
-  if(q) rows = rows.filter(r => `${r.protocolo} ${r.travelId} ${r.rota} ${r.origem} ${r.docsTxt}`.toLowerCase().includes(q));
+  if(q) rows = rows.filter(r => `${r.protocolo} ${r.travelId} ${r.rota} ${r.destino} ${r.tipo} ${r.docsTxt}`.toLowerCase().includes(q));
   // atrasados primeiro (maior atraso), depois pendentes, depois enviados; dentro, por CPT
   const ord = { atrasado:0, pendente:1, enviado:2 };
   rows = rows.slice().sort((a,b) => (ord[a.situacao]-ord[b.situacao]) || ((b.min||0)-(a.min||0)) * (a.situacao==='atrasado'?1:0) || ((a.cpt?new Date(a.cpt):Infinity) - (b.cpt?new Date(b.cpt):Infinity)));
   _docsLast = rows;
-  const sel = [_docsOrigem && `origem ${_docsOrigem}`, _docsCpt && `CPT ${_docsCpt}`].filter(Boolean).join(' · ');
+  const sel = [_docsDestino && `destino ${_docsDestino}${_docsDestinoTipo ? ` (${_docsDestinoTipo})` : ''}`,
+               _docsCpt && `CPT ${_docsCpt}${_docsCptTipo ? ` (${_docsCptTipo})` : ''}`].filter(Boolean).join(' · ');
   const fl = $('#docs-filtro-sel');
   if(fl){ fl.style.display = sel ? '' : 'none'; fl.innerHTML = sel ? `${escapeHtml(sel)} <b>✕</b>` : ''; }
   $('#docs-count').textContent = rows.length;
@@ -1217,12 +1233,13 @@ function renderDocs(){
       <td class="mono">${escapeHtml(r.protocolo)}</td>
       <td class="mono">${r.travelId ? escapeHtml(r.travelId) : '<span class="ocor-empty">—</span>'}</td>
       <td class="mono">${escapeHtml(r.rota)}</td>
-      <td class="mono">${escapeHtml(r.origem)}</td>
+      <td>${escapeHtml(r.destino)}</td>
+      <td>${escapeHtml(r.tipo)}</td>
       <td>${fmtDateTime(r.cpt)}</td>
       <td>${docsSituacaoBadge(r)}${r.docsTxt && r.situacao!=='enviado' ? ` <span class="ocor-empty" title="Coluna DOCS">${escapeHtml(r.docsTxt)}</span>` : ''}</td>
       <td>${docsAtrasoCell(r)}</td>
       <td class="num">${nf(r.pacotes)}</td>
-    </tr>`).join('') : `<tr><td colspan="8"><div class="empty-state">Nenhuma rota nesta categoria.</div></td></tr>`;
+    </tr>`).join('') : `<tr><td colspan="9"><div class="empty-state">Nenhuma rota nesta categoria.</div></td></tr>`;
 }
 function bindDocs(){
   const host = $('#view-docs');
@@ -1230,16 +1247,19 @@ function bindDocs(){
   host.addEventListener('click', e => {
     const card = e.target.closest('.kpi-card[data-docskpi]');
     if(card){ const v = card.dataset.docskpi; _docsFilter = (_docsFilter === v && v !== 'all') ? 'all' : v; renderDocs(); return; }
-    const to = e.target.closest('tr[data-origem]');
-    if(to){ _docsOrigem = (_docsOrigem === to.dataset.origem) ? '' : to.dataset.origem; renderDocs(); return; }
+    const to = e.target.closest('tr[data-destino]');
+    if(to){ _docsDestino = (_docsDestino === to.dataset.destino) ? '' : to.dataset.destino; _docsDestinoTipo = _docsDestino ? _docsTipoDest : ''; renderDocs(); return; }
     const tc = e.target.closest('tr[data-cpt]');
-    if(tc){ _docsCpt = (_docsCpt === tc.dataset.cpt) ? '' : tc.dataset.cpt; renderDocs(); return; }
-    if(e.target.closest('#docs-filtro-sel')){ _docsOrigem = ''; _docsCpt = ''; renderDocs(); }
+    if(tc){ _docsCpt = (_docsCpt === tc.dataset.cpt) ? '' : tc.dataset.cpt; _docsCptTipo = _docsCpt ? _docsTipoCpt : ''; renderDocs(); return; }
+    if(e.target.closest('#docs-filtro-sel')){ _docsDestino = ''; _docsCpt = ''; _docsDestinoTipo = ''; _docsCptTipo = ''; renderDocs(); }
   });
+  // trocar o tipo numa tabela limpa a seleção de linha daquela tabela (a linha pode nem existir mais)
+  const td = $('#docs-tipo-dest'); if(td) td.addEventListener('change', () => { _docsTipoDest = td.value; _docsDestino = ''; _docsDestinoTipo = ''; renderDocs(); });
+  const tcp = $('#docs-tipo-cpt'); if(tcp) tcp.addEventListener('change', () => { _docsTipoCpt = tcp.value; _docsCpt = ''; _docsCptTipo = ''; renderDocs(); });
   const s = $('#f-docs-search'); if(s) s.addEventListener('input', () => { _docsSearch = s.value; renderDocs(); });
   const ex = $('#docs-export'); if(ex) ex.addEventListener('click', () => {
     const lbl = { enviado:'Enviado', pendente:'Pendente', atrasado:'Pendente (atrasado)' };
-    const cols = [{label:'Protocolo',get:r=>r.protocolo},{label:'Travel ID',get:r=>r.travelId},{label:'Nomenclatura',get:r=>r.rota},{label:'Origem',get:r=>r.origem},{label:'CPT',get:r=>fmtDateTime(r.cpt)},{label:'Situação',get:r=>lbl[r.situacao]},{label:'Atraso emissão (min)',get:r=>r.situacao==='atrasado'?r.min:''},{label:'Referência',get:r=>r.situacao==='atrasado'?`${r.refLabel} ${fmtDateTime(r.refHora)}`:''},{label:'Pacotes',get:r=>r.pacotes},{label:'DOCS',get:r=>r.docsTxt}];
+    const cols = [{label:'Protocolo',get:r=>r.protocolo},{label:'Travel ID',get:r=>r.travelId},{label:'Nomenclatura',get:r=>r.rota},{label:'Destino',get:r=>r.destino},{label:'Tipo de rota',get:r=>r.tipo},{label:'CPT',get:r=>fmtDateTime(r.cpt)},{label:'Situação',get:r=>lbl[r.situacao]},{label:'Atraso emissão (min)',get:r=>r.situacao==='atrasado'?r.min:''},{label:'Referência',get:r=>r.situacao==='atrasado'?`${r.refLabel} ${fmtDateTime(r.refHora)}`:''},{label:'Pacotes',get:r=>r.pacotes},{label:'DOCS',get:r=>r.docsTxt}];
     downloadCsv('documentacao.csv', toCsv(cols, _docsLast));
   });
 }

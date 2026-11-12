@@ -191,6 +191,8 @@
   .chart-row-small { display:grid; grid-template-columns: 320px 1fr; gap:14px; margin-bottom: 22px; align-items:start; }
   .docs-grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom: 22px; align-items:start; }
   .docs-grid .table-wrap { margin-bottom:0; }
+  .docs-grid .table-head-bar { flex-wrap:wrap; }
+  .docs-tipo { border:1px solid var(--yellow-dim); border-radius:8px; padding:4px 8px; font-family:var(--font-body); font-size:12px; font-weight:600; background:var(--bg-panel); color:var(--text); cursor:pointer; max-width:170px; }
   tbody tr.docs-sel td { background: rgba(255,204,0,0.22) !important; }
   @media (max-width: 1100px){ .docs-grid { grid-template-columns: 1fr; } }
   .gx-dest-split { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
@@ -1164,14 +1166,18 @@
 
         <div class="docs-grid">
           <div class="table-wrap">
-            <div class="table-head-bar"><span class="dot" style="background:var(--yellow)"></span> Visão por origem <span class="cnt">clique p/ filtrar</span></div>
+            <div class="table-head-bar"><span class="dot" style="background:var(--yellow)"></span> Visão por destino
+              <select class="docs-tipo" id="docs-tipo-dest" title="Tipo de rota"><option value="">Todos os tipos</option></select>
+              <span class="cnt" id="docs-destino-cnt">—</span></div>
             <div class="table-scroll short"><table>
-              <thead><tr><th>Origem</th><th class="num">Total</th><th class="num">Enviados</th><th class="num">Pendentes</th><th class="num">Atrasados</th><th class="num">Pacotes</th><th class="num">% enviado</th></tr></thead>
-              <tbody id="docs-origem-tbody"></tbody>
+              <thead><tr><th>Destino</th><th class="num">Total</th><th class="num">Enviados</th><th class="num">Pendentes</th><th class="num">Atrasados</th><th class="num">Pacotes</th><th class="num">% enviado</th></tr></thead>
+              <tbody id="docs-destino-tbody"></tbody>
             </table></div>
           </div>
           <div class="table-wrap">
-            <div class="table-head-bar"><span class="dot" style="background:var(--yellow)"></span> Quantidade por CPT <span class="cnt">clique p/ filtrar</span></div>
+            <div class="table-head-bar"><span class="dot" style="background:var(--yellow)"></span> Quantidade por CPT
+              <select class="docs-tipo" id="docs-tipo-cpt" title="Tipo de rota"><option value="">Todos os tipos</option></select>
+              <span class="cnt" id="docs-cpt-cnt">—</span></div>
             <div class="table-scroll short"><table>
               <thead><tr><th>CPT</th><th class="num">Total</th><th class="num">Enviados</th><th class="num">Pendentes</th><th class="num">Atrasados</th><th class="num">Pacotes</th><th class="num">% enviado</th></tr></thead>
               <tbody id="docs-cpt-tbody"></tbody>
@@ -1180,13 +1186,13 @@
         </div>
 
         <div class="filter-bar">
-          <input type="text" class="search" id="f-docs-search" placeholder="Buscar protocolo, Travel ID, nomenclatura, origem...">
+          <input type="text" class="search" id="f-docs-search" placeholder="Buscar protocolo, Travel ID, nomenclatura, destino...">
           <button class="chip-export" id="docs-filtro-sel" style="display:none" title="Limpar filtro de origem/CPT"></button>
           <button class="chip-export" id="docs-export"><i class="ico-dl"></i> Exportar CSV</button>
           <div class="result-count"><b id="docs-count">0</b> rotas · <b id="docs-count-pac">0</b> pacotes</div>
         </div>
         <div class="table-wrap"><div class="table-scroll"><table>
-          <thead><tr><th>Protocolo</th><th>Travel ID</th><th>Nomenclatura</th><th>Origem</th><th>CPT</th><th>Situação</th><th>Atraso na emissão</th><th class="num">Pacotes</th></tr></thead>
+          <thead><tr><th>Protocolo</th><th>Travel ID</th><th>Nomenclatura</th><th>Destino</th><th>Tipo de rota</th><th>CPT</th><th>Situação</th><th>Atraso na emissão</th><th class="num">Pacotes</th></tr></thead>
           <tbody id="docs-tbody"></tbody>
         </table></div></div>
       </section>
@@ -1467,7 +1473,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=60"></script>
+<script src="app.js?v=61"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">
