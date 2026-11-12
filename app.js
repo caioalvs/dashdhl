@@ -1047,6 +1047,9 @@ let _docsFilter = 'all', _docsSearch = '', _docsDestino = '', _docsCpt = '', _do
 let _docsDestinoTipo = [], _docsCptTipo = [];
 let _docsMsVals = { tipoDest:[], tipoCpt:[], horaCpt:[] };
 const docsHoraLbl = iso => { if(!iso) return ''; const d = new Date(iso); return isNaN(d) ? '' : String(d.getHours()).padStart(2,'0')+'h'; };
+// data + hora do CPT ("dd/mm HHh") — filtro de horário da tabela por CPT
+const docsDataHoraLbl = iso => { if(!iso) return ''; const d = new Date(iso); if(isNaN(d)) return '';
+  const p = n => String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}h`; };
 const docsNorm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim();
 
 // Exceção "saída bipada" — cópia do dhl_carregarBase do script DOCS.gs:
@@ -1230,7 +1233,9 @@ function renderDocs(){
   // ---- visão por destino e quantidade por CPT (clicar filtra a tabela de detalhe)
   // filtros multi-seleção (mesmo componente das abas ETA/ETD): tipo de rota em cada tabela + horário do CPT
   const tipos = uniqueSorted(all.map(r => r.tipo));
-  const horasCpt = uniqueSorted(all.map(r => docsHoraLbl(r.cpt)).filter(Boolean));
+  const horaTs = {};   // rótulo "dd/mm HHh" → timestamp, pra ordenar cronológico
+  all.forEach(r => { const l = docsDataHoraLbl(r.cpt); if(l){ const t = new Date(r.cpt).getTime(); if(!(l in horaTs) || t < horaTs[l]) horaTs[l] = t; } });
+  const horasCpt = Object.keys(horaTs).sort((a,b) => horaTs[a] - horaTs[b]);
   _docsMsVals = { tipoDest: tipos, tipoCpt: tipos, horaCpt: horasCpt };
   $$('.ms[data-tab="docs"]').forEach(c => {
     if(c.classList.contains('open')) refreshMsBadge(c);   // aberto: não reconstrói (mantém aberto)
@@ -1252,7 +1257,7 @@ function renderDocs(){
   $('#docs-destino-tbody').innerHTML = porDestino.length ? porDestino.map(a => aggRow(a,'destino',a.k===_docsDestino)).join('')
     : `<tr><td colspan="7"><div class="empty-state">Sem rotas deste tipo.</div></td></tr>`;
   const baseCpt = all.filter(r => (!fD.tipoCpt.length || fD.tipoCpt.includes(r.tipo))
-                               && (!fD.horaCpt.length || fD.horaCpt.includes(docsHoraLbl(r.cpt))));
+                               && (!fD.horaCpt.length || fD.horaCpt.includes(docsDataHoraLbl(r.cpt))));
   const porCpt = docsAgg(baseCpt, r => docsCptKey(r.cpt)).sort((a,b) => a.sortKey - b.sortKey);
   $('#docs-cpt-tbody').innerHTML = porCpt.length ? porCpt.map(a => aggRow(a,'cpt',a.k===_docsCpt)).join('')
     : `<tr><td colspan="7"><div class="empty-state">Sem rotas deste tipo.</div></td></tr>`;
