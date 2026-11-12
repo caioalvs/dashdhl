@@ -61,7 +61,8 @@ const AUTO_REFRESH_MIN = 5;        // intervalo de auto-atualização (minutos) 
 // Estado de filtros por aba (multi-seleção: arrays; search é texto)
 const filters = {
   eta: { classe:[], status:[], tipo:[], resp:[], search:'' },
-  etd: { banda:[], status:[], tipo:[], destino:[], parados:[], posto:[], search:'' }
+  etd: { banda:[], status:[], tipo:[], destino:[], parados:[], posto:[], search:'' },
+  docs:{ tipoDest:[], tipoCpt:[], horaCpt:[] }   // aba Documentação (tabelas por destino / por CPT)
 };
 
 // rótulos das faixas de risco da ETD (para o filtro "banda")
@@ -171,7 +172,7 @@ document.addEventListener('click', (e) => { if(!e.target.closest('.ms')) closeAl
 
 // chamado quando qualquer filtro muda → re-render da aba + sincroniza KPIs/badges
 function onFilterChange(tab){
-  if(tab==='eta'){ refreshEta(); } else { refreshEtd(); }
+  if(tab==='eta'){ refreshEta(); } else if(tab==='docs'){ renderDocs(); } else { refreshEtd(); }
   syncFilterUI(tab);
 }
 // re-renderiza os multi-selects daquela aba (atualiza contadores) e os KPIs ativos
@@ -197,6 +198,7 @@ function rebuildMs(container){
   buildMultiSelect(container, currentFilterValues(tab,key));
 }
 function currentFilterValues(tab,key){
+  if(tab==='docs') return _docsMsVals[key] || [];   // calculado no renderDocs
   const data = DASHBOARD_DATA[tab];
   if(tab==='eta'){
     if(key==='classe') return uniqueSorted(data.map(d=>d.classificacaoTexto));
@@ -1026,19 +1028,25 @@ function bindValidacao(){
 /* ----------------------------------------------------------------------- */
 /* DOCUMENTAÇÃO — mesma regra do Apps Script "Verificar Pendências Docs"     */
 /* (verificarAtrasoDocumentos, arquivo DOCS.gs da planilha):                 */
-/*  · lê a ETD; coluna DOCS (W). ENVIADO = enviado. T1/REVERSA/CANCELADO(A)/ */
-/*    INFRUTIFERA/MW = não se aplica (o script ignora). Resto = pendente.     */
+/*  · lê a ETD; coluna DOCS (W). ENVIADO e T1 = enviado. CANCELADO(A),       */
+/*    INFRUTIFERA e REVERSA vão pra tabelas próprias (fora de enviado/pend.). */
+/*    MW e o resto = pendente (pedido do Caio 12/11: MW entrou nos docs).    */
+/*    Cancelado/infrutífera também pela SM (col L) ou Base Estado=Cancelado. */
 /*  · prazo conta da saída real (E); sem E, do CPT previsto (D).             */
 /*  · pendente há ≥ 20 min = atrasado. ≥ 60 crítico · 40–59 alto.            */
 /*  · exceção: E vazio + H (Substatus) = NO PRAZO/ATRASADO → saída já bipada, */
 /*    a hora real vem da Base (col T, Origem ATD — trecho mais recente).     */
 /* ----------------------------------------------------------------------- */
-const DOCS_IGNORADOS = ['T1','REVERSA','CANCELADO','CANCELADA','INFRUTIFERA','MW'];
+const DOCS_ENVIADO = ['ENVIADO','T1'];
+const DOCS_FORA = ['cancelado','infrutifera','reversa'];   // situações com tabela própria
 const DOCS_H_SAIDA   = ['NO PRAZO','ATRASADO'];
 const DOCS_LIMITE_MIN = 20;
 let _docsFilter = 'all', _docsSearch = '', _docsDestino = '', _docsCpt = '', _docsLast = [];
-// filtro "Tipo de rota" de cada tabela (destino / CPT). Clicar numa linha leva o tipo junto pro detalhe.
-let _docsTipoDest = '', _docsTipoCpt = '', _docsDestinoTipo = '', _docsCptTipo = '';
+// Filtros multi-seleção ficam em filters.docs (tipoDest, tipoCpt, horaCpt). Clicar numa linha
+// leva os tipos marcados naquela tabela junto pro detalhe (_docsDestinoTipo / _docsCptTipo).
+let _docsDestinoTipo = [], _docsCptTipo = [];
+let _docsMsVals = { tipoDest:[], tipoCpt:[], horaCpt:[] };
+const docsHoraLbl = iso => { if(!iso) return ''; const d = new Date(iso); return isNaN(d) ? '' : String(d.getHours()).padStart(2,'0')+'h'; };
 const docsNorm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim();
 
 // saída real mais recente por protocolo na Base (col T) — usada na exceção "saída bipada"
@@ -1077,8 +1085,15 @@ function docsRows(){
       docsTxt: String(d.docs || '').trim(),
       refLabel: '', refHora: null, min: null, sev: ''
     };
-    if(DOCS_IGNORADOS.includes(st)){ r.situacao = 'na'; out.push(r); return; }
-    if(st === 'ENVIADO'){ r.situacao = 'enviado'; out.push(r); return; }
+    const sm = docsNorm(d.statusSM), est = docsNorm(d.baseEstado);
+    let fora = '';
+    if(/^CANCEL/.test(st))      fora = 'cancelado';
+    else if(/^INFRUT/.test(st)) fora = 'infrutifera';
+    else if(st === 'REVERSA')   fora = 'reversa';
+    else if(/INFRUT/.test(sm))  fora = 'infrutifera';
+    else if(/CANCEL/.test(sm) || est === 'CANCELADO') fora = 'cancelado';
+    if(fora){ r.situacao = fora; r.statusSM = String(d.statusSM || '').trim(); r.baseEstado = String(d.baseEstado || '').trim(); out.push(r); return; }
+    if(DOCS_ENVIADO.includes(st)){ r.situacao = 'enviado'; out.push(r); return; }
     // pendente: conta o tempo desde a saída (E) ou, sem ela, desde o CPT previsto (D)
     const ref = d.bipagemCPT || d.cpt;
     r.situacao = 'pendente';
@@ -1103,7 +1118,6 @@ function docsRows(){
   });
   return out;
 }
-const docsHoraKey = iso => { if(!iso) return null; const d = new Date(iso); return isNaN(d) ? null : d.getHours(); };
 const docsCptKey  = iso => iso ? fmtDateTime(iso) : 'Sem CPT';
 function docsAgg(rows, keyFn){
   const g = {};
@@ -1135,8 +1149,8 @@ function docsAtrasoCell(r){
 function renderDocs(){
   if(!$('#view-docs')) return;
   const todas = docsRows();
-  const all = todas.filter(r => r.situacao !== 'na');
-  const naCount = todas.length - all.length;
+  const all = todas.filter(r => !DOCS_FORA.includes(r.situacao));
+  const fora = {}; DOCS_FORA.forEach(s => { fora[s] = todas.filter(r => r.situacao === s); });
   const env = all.filter(r => r.situacao === 'enviado');
   const pen = all.filter(r => r.situacao === 'pendente');
   const atr = all.filter(r => r.situacao === 'atrasado');
@@ -1151,7 +1165,11 @@ function renderDocs(){
   $('#docs-kpi-pen').textContent   = pen.length;
   $('#docs-kpi-atr').textContent   = atr.length;
   $('#docs-kpi-pac').textContent   = nf(sumPac(all));
-  $('#docs-kpi-total-sub').textContent = `Rotas da ETD${naCount ? ` · ${naCount} fora (T1/reversa/cancel.)` : ''}`;
+  $('#docs-kpi-total-sub').textContent = 'Rotas da ETD (sem canceladas, infrutíferas e reversas)';
+  [['can','cancelado'],['inf','infrutifera'],['rev','reversa']].forEach(([id, s]) => {
+    const v = $('#docs-kpi-'+id); if(v) v.textContent = fora[s].length;
+    const sb = $('#docs-kpi-'+id+'-sub'); if(sb) sb.textContent = `${nf(sumPac(fora[s]))} pacotes · ver tabela abaixo`;
+  });
   $('#docs-kpi-env-sub').textContent = all.length ? `${Math.round(env.length/all.length*100)}% emitidos · ${nf(sumPac(env))} pacotes` : '—';
   $('#docs-kpi-pen-sub').textContent = `Aguardando saída ou < ${DOCS_LIMITE_MIN} min · ${nf(sumPac(pen))} pacotes`;
   $('#docs-kpi-atr-sub').textContent = `${crit} crítico(s) ≥ 60 min · ${nf(sumPac(atr))} pacotes`;
@@ -1162,31 +1180,40 @@ function renderDocs(){
     statItem('var(--green)','Enviados',env.length)+statItem('var(--grey)','Pendentes',pen.length)+statItem('var(--red)','Atrasados',atr.length));
   $$('#view-docs .kpi-card[data-docskpi]').forEach(c => c.classList.toggle('active', c.dataset.docskpi === _docsFilter));
 
-  // ---- visão por horário (hora do CPT)
-  const horas = Array.from({length:24}, (_,h) => h);
-  const porHora = { enviado:Array(24).fill(0), pendente:Array(24).fill(0), atrasado:Array(24).fill(0) };
-  all.forEach(r => { const h = docsHoraKey(r.cpt); if(h != null) porHora[r.situacao][h]++; });
+  // ---- visão por horário, SEPARADA POR DATA (barra = dia + hora do CPT, em ordem cronológica)
+  const slots = {};
+  all.forEach(r => {
+    if(!r.cpt) return;
+    const d = new Date(r.cpt); if(isNaN(d)) return;
+    const t0 = new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours()).getTime();
+    const s = slots[t0] || (slots[t0] = { lbl: `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}h`, enviado:0, pendente:0, atrasado:0 });
+    s[r.situacao]++;
+  });
+  const sk = Object.keys(slots).map(Number).sort((a,b) => a-b);
+  const porHora = { enviado: sk.map(k => slots[k].enviado), pendente: sk.map(k => slots[k].pendente), atrasado: sk.map(k => slots[k].atrasado) };
   const cv = $('#chart-docs-hora');
   if(cv && typeof Chart !== 'undefined'){
     destroyChart('docsHora');
     charts.docsHora = new Chart(cv, { type:'bar',
-      data:{ labels: horas.map(h => String(h).padStart(2,'0')+'h'), datasets:[
+      data:{ labels: sk.map(k => slots[k].lbl), datasets:[
         { label:'Enviado',  data:porHora.enviado,  backgroundColor:PALETTE.green, borderRadius:3, borderWidth:0, stack:'s' },
         { label:'Pendente', data:porHora.pendente, backgroundColor:PALETTE.grey,  borderRadius:3, borderWidth:0, stack:'s' },
         { label:'Atrasado', data:porHora.atrasado, backgroundColor:PALETTE.red,   borderRadius:3, borderWidth:0, stack:'s' } ] },
       options:{ responsive:true, maintainAspectRatio:false,
-        scales:{ x:{ stacked:true }, y:{ stacked:true, beginAtZero:true, ticks:{ precision:0 } } },
+        scales:{ x:{ stacked:true, ticks:{ maxRotation:60, minRotation:45, autoSkip:false, font:{ size:10 } } }, y:{ stacked:true, beginAtZero:true, ticks:{ precision:0 } } },
         plugins:{ legend:{ position:'bottom', labels:{ boxWidth:10 } } } } });
   }
 
   // ---- visão por destino e quantidade por CPT (clicar filtra a tabela de detalhe)
-  // seletor "Tipo de rota" de cada tabela: opções = tipos presentes nas rotas
+  // filtros multi-seleção (mesmo componente das abas ETA/ETD): tipo de rota em cada tabela + horário do CPT
   const tipos = uniqueSorted(all.map(r => r.tipo));
-  [['#docs-tipo-dest', _docsTipoDest], ['#docs-tipo-cpt', _docsTipoCpt]].forEach(([sel, val]) => {
-    const el = $(sel); if(!el) return;
-    el.innerHTML = '<option value="">Todos os tipos</option>' + tipos.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
-    el.value = tipos.includes(val) ? val : '';
+  const horasCpt = uniqueSorted(all.map(r => docsHoraLbl(r.cpt)).filter(Boolean));
+  _docsMsVals = { tipoDest: tipos, tipoCpt: tipos, horaCpt: horasCpt };
+  $$('.ms[data-tab="docs"]').forEach(c => {
+    if(c.classList.contains('open')) refreshMsBadge(c);   // aberto: não reconstrói (mantém aberto)
+    else buildMultiSelect(c, _docsMsVals[c.dataset.key] || []);
   });
+  const fD = filters.docs;
   const aggRow = (a, attr, active) => `
     <tr data-${attr}="${escapeHtml(a.k)}" class="${a.atrasado?'crit':''}${active?' docs-sel':''}" style="cursor:pointer">
       <td class="mono">${escapeHtml(a.k)}</td>
@@ -1197,11 +1224,12 @@ function renderDocs(){
       <td class="num">${nf(a.pacotes)}</td>
       <td class="num">${Math.round(a.enviado/a.total*100)}%</td>
     </tr>`;
-  const baseDest = _docsTipoDest ? all.filter(r => r.tipo === _docsTipoDest) : all;
+  const baseDest = all.filter(r => !fD.tipoDest.length || fD.tipoDest.includes(r.tipo));
   const porDestino = docsAgg(baseDest, r => r.destino).sort((a,b) => (b.atrasado+b.pendente) - (a.atrasado+a.pendente) || b.total - a.total);
   $('#docs-destino-tbody').innerHTML = porDestino.length ? porDestino.map(a => aggRow(a,'destino',a.k===_docsDestino)).join('')
     : `<tr><td colspan="7"><div class="empty-state">Sem rotas deste tipo.</div></td></tr>`;
-  const baseCpt = _docsTipoCpt ? all.filter(r => r.tipo === _docsTipoCpt) : all;
+  const baseCpt = all.filter(r => (!fD.tipoCpt.length || fD.tipoCpt.includes(r.tipo))
+                               && (!fD.horaCpt.length || fD.horaCpt.includes(docsHoraLbl(r.cpt))));
   const porCpt = docsAgg(baseCpt, r => docsCptKey(r.cpt)).sort((a,b) => a.sortKey - b.sortKey);
   $('#docs-cpt-tbody').innerHTML = porCpt.length ? porCpt.map(a => aggRow(a,'cpt',a.k===_docsCpt)).join('')
     : `<tr><td colspan="7"><div class="empty-state">Sem rotas deste tipo.</div></td></tr>`;
@@ -1214,16 +1242,16 @@ function renderDocs(){
   else if(_docsFilter === 'pendente') rows = pen;
   else if(_docsFilter === 'atrasado') rows = atr;
   else if(_docsFilter === 'abertos')  rows = pen.concat(atr);
-  if(_docsDestino){ rows = rows.filter(r => r.destino === _docsDestino); if(_docsDestinoTipo) rows = rows.filter(r => r.tipo === _docsDestinoTipo); }
-  if(_docsCpt){     rows = rows.filter(r => docsCptKey(r.cpt) === _docsCpt); if(_docsCptTipo) rows = rows.filter(r => r.tipo === _docsCptTipo); }
+  if(_docsDestino){ rows = rows.filter(r => r.destino === _docsDestino && (!_docsDestinoTipo.length || _docsDestinoTipo.includes(r.tipo))); }
+  if(_docsCpt){     rows = rows.filter(r => docsCptKey(r.cpt) === _docsCpt && (!_docsCptTipo.length || _docsCptTipo.includes(r.tipo))); }
   const q = _docsSearch.trim().toLowerCase();
   if(q) rows = rows.filter(r => `${r.protocolo} ${r.travelId} ${r.rota} ${r.destino} ${r.tipo} ${r.docsTxt}`.toLowerCase().includes(q));
   // atrasados primeiro (maior atraso), depois pendentes, depois enviados; dentro, por CPT
   const ord = { atrasado:0, pendente:1, enviado:2 };
   rows = rows.slice().sort((a,b) => (ord[a.situacao]-ord[b.situacao]) || ((b.min||0)-(a.min||0)) * (a.situacao==='atrasado'?1:0) || ((a.cpt?new Date(a.cpt):Infinity) - (b.cpt?new Date(b.cpt):Infinity)));
   _docsLast = rows;
-  const sel = [_docsDestino && `destino ${_docsDestino}${_docsDestinoTipo ? ` (${_docsDestinoTipo})` : ''}`,
-               _docsCpt && `CPT ${_docsCpt}${_docsCptTipo ? ` (${_docsCptTipo})` : ''}`].filter(Boolean).join(' · ');
+  const sel = [_docsDestino && `destino ${_docsDestino}${_docsDestinoTipo.length ? ` (${_docsDestinoTipo.join(', ')})` : ''}`,
+               _docsCpt && `CPT ${_docsCpt}${_docsCptTipo.length ? ` (${_docsCptTipo.join(', ')})` : ''}`].filter(Boolean).join(' · ');
   const fl = $('#docs-filtro-sel');
   if(fl){ fl.style.display = sel ? '' : 'none'; fl.innerHTML = sel ? `${escapeHtml(sel)} <b>✕</b>` : ''; }
   $('#docs-count').textContent = rows.length;
@@ -1240,6 +1268,25 @@ function renderDocs(){
       <td>${docsAtrasoCell(r)}</td>
       <td class="num">${nf(r.pacotes)}</td>
     </tr>`).join('') : `<tr><td colspan="9"><div class="empty-state">Nenhuma rota nesta categoria.</div></td></tr>`;
+
+  // ---- tabelas próprias: canceladas, infrutíferas, reversas
+  [['cancelado','#docs-can-tbody','#docs-can-cnt'],['infrutifera','#docs-inf-tbody','#docs-inf-cnt'],['reversa','#docs-rev-tbody','#docs-rev-cnt']].forEach(([s, tb, cn]) => {
+    const rs = fora[s].slice().sort((a,b) => (a.cpt?new Date(a.cpt):Infinity) - (b.cpt?new Date(b.cpt):Infinity));
+    const c = $(cn); if(c) c.textContent = `${rs.length} rotas · ${nf(sumPac(rs))} pacotes`;
+    const t = $(tb); if(!t) return;
+    t.innerHTML = rs.length ? rs.map(r => {
+      const motivo = [r.docsTxt && `DOCS: ${r.docsTxt}`, r.statusSM && `SM: ${r.statusSM}`, r.baseEstado && `Base: ${r.baseEstado}`].filter(Boolean).join(' · ');
+      return `<tr>
+        <td class="mono">${escapeHtml(r.protocolo)}</td>
+        <td class="mono">${r.travelId ? escapeHtml(r.travelId) : '<span class="ocor-empty">—</span>'}</td>
+        <td class="mono">${escapeHtml(r.rota)}</td>
+        <td>${escapeHtml(r.destino)}</td>
+        <td>${escapeHtml(r.tipo)}</td>
+        <td>${fmtDateTime(r.cpt)}</td>
+        <td class="num">${nf(r.pacotes)}</td>
+        <td><span class="ocor-info">${escapeHtml(motivo || '—')}</span></td>
+      </tr>`; }).join('') : `<tr><td colspan="8"><div class="empty-state">Nenhuma rota.</div></td></tr>`;
+  });
 }
 function bindDocs(){
   const host = $('#view-docs');
@@ -1248,14 +1295,11 @@ function bindDocs(){
     const card = e.target.closest('.kpi-card[data-docskpi]');
     if(card){ const v = card.dataset.docskpi; _docsFilter = (_docsFilter === v && v !== 'all') ? 'all' : v; renderDocs(); return; }
     const to = e.target.closest('tr[data-destino]');
-    if(to){ _docsDestino = (_docsDestino === to.dataset.destino) ? '' : to.dataset.destino; _docsDestinoTipo = _docsDestino ? _docsTipoDest : ''; renderDocs(); return; }
+    if(to){ _docsDestino = (_docsDestino === to.dataset.destino) ? '' : to.dataset.destino; _docsDestinoTipo = _docsDestino ? filters.docs.tipoDest.slice() : []; renderDocs(); return; }
     const tc = e.target.closest('tr[data-cpt]');
-    if(tc){ _docsCpt = (_docsCpt === tc.dataset.cpt) ? '' : tc.dataset.cpt; _docsCptTipo = _docsCpt ? _docsTipoCpt : ''; renderDocs(); return; }
-    if(e.target.closest('#docs-filtro-sel')){ _docsDestino = ''; _docsCpt = ''; _docsDestinoTipo = ''; _docsCptTipo = ''; renderDocs(); }
+    if(tc){ _docsCpt = (_docsCpt === tc.dataset.cpt) ? '' : tc.dataset.cpt; _docsCptTipo = _docsCpt ? filters.docs.tipoCpt.slice() : []; renderDocs(); return; }
+    if(e.target.closest('#docs-filtro-sel')){ _docsDestino = ''; _docsCpt = ''; _docsDestinoTipo = []; _docsCptTipo = []; renderDocs(); }
   });
-  // trocar o tipo numa tabela limpa a seleção de linha daquela tabela (a linha pode nem existir mais)
-  const td = $('#docs-tipo-dest'); if(td) td.addEventListener('change', () => { _docsTipoDest = td.value; _docsDestino = ''; _docsDestinoTipo = ''; renderDocs(); });
-  const tcp = $('#docs-tipo-cpt'); if(tcp) tcp.addEventListener('change', () => { _docsTipoCpt = tcp.value; _docsCpt = ''; _docsCptTipo = ''; renderDocs(); });
   const s = $('#f-docs-search'); if(s) s.addEventListener('input', () => { _docsSearch = s.value; renderDocs(); });
   const ex = $('#docs-export'); if(ex) ex.addEventListener('click', () => {
     const lbl = { enviado:'Enviado', pendente:'Pendente', atrasado:'Pendente (atrasado)' };

@@ -189,12 +189,14 @@
   .panel h3::before { content:''; flex:0 0 auto; width:3px; height:15px; border-radius:2px; background:var(--yellow); box-shadow:0 0 0 1px rgba(199,154,0,.25); margin-right:9px; }
   .panel h3 span.hint { font-size:11px; color:var(--text-dim); font-weight:500; white-space:normal; margin-left:auto; }
   .chart-row-small { display:grid; grid-template-columns: 320px 1fr; gap:14px; margin-bottom: 22px; align-items:start; }
-  .docs-grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom: 22px; align-items:start; }
-  .docs-grid .table-wrap { margin-bottom:0; }
+  .docs-grid { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap:14px; margin-bottom: 22px; align-items:start; }
+  .docs-grid .table-wrap { margin-bottom:0; overflow:visible; min-width:0; }   /* visible: o popup do multi-select não fica cortado */
+  .docs-grid .ms-pop { left:auto; right:0; }
   .docs-grid .table-head-bar { flex-wrap:wrap; }
+  .docs-grid .table-head-bar .ms-btn { padding:4px 10px; }
   .docs-tipo { border:1px solid var(--yellow-dim); border-radius:8px; padding:4px 8px; font-family:var(--font-body); font-size:12px; font-weight:600; background:var(--bg-panel); color:var(--text); cursor:pointer; max-width:170px; }
   tbody tr.docs-sel td { background: rgba(255,204,0,0.22) !important; }
-  @media (max-width: 1100px){ .docs-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 1100px){ .docs-grid { grid-template-columns: minmax(0,1fr); } }
   .gx-dest-split { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   @media (max-width:1100px){ .gx-dest-split { grid-template-columns:1fr; } }
   .gx-dest-cap { display:flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.4px; margin-bottom:6px; }
@@ -1146,28 +1148,20 @@
           <div class="kpi-card k-grey clickable" data-docskpi="pendente"><div class="kpi-label">Pendentes no prazo</div><div class="kpi-value tabular" id="docs-kpi-pen">0</div><div class="kpi-sub" id="docs-kpi-pen-sub">—</div></div>
           <div class="kpi-card k-red clickable" data-docskpi="atrasado"><div class="kpi-label">Atrasados (&gt;20 min)</div><div class="kpi-value tabular" id="docs-kpi-atr">0</div><div class="kpi-sub" id="docs-kpi-atr-sub">—</div></div>
           <div class="kpi-card k-blue"><div class="kpi-label">Total de pacotes</div><div class="kpi-value tabular" id="docs-kpi-pac">0</div><div class="kpi-sub" id="docs-kpi-pac-sub">—</div></div>
+          <div class="kpi-card k-grey"><div class="kpi-label">Canceladas</div><div class="kpi-value tabular" id="docs-kpi-can">0</div><div class="kpi-sub" id="docs-kpi-can-sub">—</div></div>
+          <div class="kpi-card k-grey"><div class="kpi-label">Infrutíferas</div><div class="kpi-value tabular" id="docs-kpi-inf">0</div><div class="kpi-sub" id="docs-kpi-inf-sub">—</div></div>
+          <div class="kpi-card k-grey"><div class="kpi-label">Reversas</div><div class="kpi-value tabular" id="docs-kpi-rev">0</div><div class="kpi-sub" id="docs-kpi-rev-sub">—</div></div>
         </div>
 
-        <div class="chart-row-small">
-          <div class="panel">
-            <h3>Como ler</h3>
-            <div class="chart-aside">
-              <p><b>Enviado</b>: coluna DOCS = ENVIADO.</p>
-              <p><b>Pendente</b>: DOCS vazio ou diferente de ENVIADO. Conta o tempo da <b>saída real</b> (Bipagem CPT) ou, sem ela, do <b>CPT previsto</b>.</p>
-              <p><b>Atrasado</b>: pendente há 20 min ou mais. Vermelho a partir de 40 min, crítico a partir de 60.</p>
-              <p>T1, REVERSA, CANCELADO, INFRUTÍFERA e MW ficam fora, igual ao script da planilha.</p>
-            </div>
-          </div>
-          <div class="panel">
-            <h3>Visão por horário <span class="hint">rotas por hora do CPT</span></h3>
-            <div class="chart-box-sm" style="height:220px"><canvas id="chart-docs-hora"></canvas></div>
-          </div>
+        <div class="panel" style="margin-bottom:22px">
+          <h3>Visão por horário <span class="hint">rotas por data e hora do CPT</span></h3>
+          <div class="chart-box-sm" style="height:240px"><canvas id="chart-docs-hora"></canvas></div>
         </div>
 
         <div class="docs-grid">
           <div class="table-wrap">
             <div class="table-head-bar"><span class="dot" style="background:var(--yellow)"></span> Visão por destino
-              <select class="docs-tipo" id="docs-tipo-dest" title="Tipo de rota"><option value="">Todos os tipos</option></select>
+              <div class="ms" data-tab="docs" data-key="tipoDest" data-cap="Tipo de rota"></div>
               <span class="cnt" id="docs-destino-cnt">—</span></div>
             <div class="table-scroll short"><table>
               <thead><tr><th>Destino</th><th class="num">Total</th><th class="num">Enviados</th><th class="num">Pendentes</th><th class="num">Atrasados</th><th class="num">Pacotes</th><th class="num">% enviado</th></tr></thead>
@@ -1176,7 +1170,8 @@
           </div>
           <div class="table-wrap">
             <div class="table-head-bar"><span class="dot" style="background:var(--yellow)"></span> Quantidade por CPT
-              <select class="docs-tipo" id="docs-tipo-cpt" title="Tipo de rota"><option value="">Todos os tipos</option></select>
+              <div class="ms" data-tab="docs" data-key="tipoCpt" data-cap="Tipo de rota"></div>
+              <div class="ms" data-tab="docs" data-key="horaCpt" data-cap="Horário"></div>
               <span class="cnt" id="docs-cpt-cnt">—</span></div>
             <div class="table-scroll short"><table>
               <thead><tr><th>CPT</th><th class="num">Total</th><th class="num">Enviados</th><th class="num">Pendentes</th><th class="num">Atrasados</th><th class="num">Pacotes</th><th class="num">% enviado</th></tr></thead>
@@ -1195,6 +1190,28 @@
           <thead><tr><th>Protocolo</th><th>Travel ID</th><th>Nomenclatura</th><th>Destino</th><th>Tipo de rota</th><th>CPT</th><th>Situação</th><th>Atraso na emissão</th><th class="num">Pacotes</th></tr></thead>
           <tbody id="docs-tbody"></tbody>
         </table></div></div>
+
+        <div class="table-wrap">
+          <div class="table-head-bar"><span class="dot" style="background:var(--red)"></span> Canceladas <span class="cnt" id="docs-can-cnt">—</span></div>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Protocolo</th><th>Travel ID</th><th>Nomenclatura</th><th>Destino</th><th>Tipo de rota</th><th>CPT</th><th class="num">Pacotes</th><th>Status</th></tr></thead>
+            <tbody id="docs-can-tbody"></tbody>
+          </table></div>
+        </div>
+        <div class="table-wrap">
+          <div class="table-head-bar"><span class="dot" style="background:var(--amber)"></span> Infrutíferas <span class="cnt" id="docs-inf-cnt">—</span></div>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Protocolo</th><th>Travel ID</th><th>Nomenclatura</th><th>Destino</th><th>Tipo de rota</th><th>CPT</th><th class="num">Pacotes</th><th>Status</th></tr></thead>
+            <tbody id="docs-inf-tbody"></tbody>
+          </table></div>
+        </div>
+        <div class="table-wrap">
+          <div class="table-head-bar"><span class="dot" style="background:var(--grey)"></span> Reversas <span class="cnt" id="docs-rev-cnt">—</span></div>
+          <div class="table-scroll short"><table>
+            <thead><tr><th>Protocolo</th><th>Travel ID</th><th>Nomenclatura</th><th>Destino</th><th>Tipo de rota</th><th>CPT</th><th class="num">Pacotes</th><th>Status</th></tr></thead>
+            <tbody id="docs-rev-tbody"></tbody>
+          </table></div>
+        </div>
       </section>
 
       <!-- ===================== MAPA da frota ===================== -->
@@ -1473,7 +1490,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= força o navegador a pegar a versão nova a cada deploy (bump ao mudar o app.js) -->
 <script src="data.js?v=1"></script>
-<script src="app.js?v=61"></script>
+<script src="app.js?v=62"></script>
   <div id="ind-modal" class="ind-modal" style="display:none" onclick="if(event.target===this)closeIndicador()">
     <div class="ind-modal-box">
       <div class="ind-modal-head">
